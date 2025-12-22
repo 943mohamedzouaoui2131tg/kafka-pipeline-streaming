@@ -56,7 +56,8 @@ python3 ./src/producer.py
 #### Cassandra Consumer
 
 ```bash
-docker exec -it cassandra_consumer bash
+docker exec -it cassandra1 cqlsh
+
 
 python3 ./src/producer.py
 ```
