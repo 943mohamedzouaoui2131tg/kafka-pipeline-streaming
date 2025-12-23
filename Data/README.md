@@ -15,7 +15,7 @@ Open your terminal/command prompt and run:
 py parquet_to_json.py
 ```
 # Folder Structure :
-
+```bash
 Data/
 ├── parquet_to_json.py                      # The conversion script
 ├── datasets_parquet/              # Input folder with .parquet files
@@ -28,3 +28,4 @@ Data/
 │   ├── taxi_zones.dbf
 │   └── taxi_zones.prj
 └── datasets_json/                 # Output folder (created automatically)
+```
