@@ -1,5 +1,5 @@
 version: "3"
-name: "borkers"
+name: "kafka_brokers"
 services:
     zookeeper:
         image: wurstmeister/zookeeper
@@ -46,34 +46,33 @@ services:
         depends_on:
             - zookeeper
 
-    cassandra1:
-        image: cassandra:3.0
-        container_name: cassandra1
-        ports:
-            - "9042:9042"
-        environment:
-            - CASSANDRA_CLUSTER_NAME=ProjetCluster
-            - CASSANDRA_DC=datacenter1
-            - CASSANDRA_RACK=rack1
-            - CASSANDRA_ENDPOINT_SNITCH=GossipingPropertyFileSnitch
-            - CASSANDRA_SEEDS=cassandra1
-        volumes:
-            - cassandra1_data:/var/lib/cassandra
+    # cassandra1:
+    #     image: cassandra:3.0
+    #     container_name: cassandra1
+    #     ports:
+    #         - "9042:9042"
+    #     environment:
+    #         - CASSANDRA_CLUSTER_NAME=ProjetCluster
+    #         - CASSANDRA_DC=datacenter1
+    #         - CASSANDRA_RACK=rack1
+    #         - CASSANDRA_ENDPOINT_SNITCH=GossipingPropertyFileSnitch
+    #         - CASSANDRA_SEEDS=cassandra1
+    #     volumes:
+    #         - cassandra1_data:/var/lib/cassandra
 
-    cassandra2:
-        image: cassandra:3.0
-        container_name: cassandra2
-        environment:
-            - CASSANDRA_CLUSTER_NAME=ProjetCluster
-            - CASSANDRA_DC=datacenter1
-            - CASSANDRA_RACK=rack1
-            - CASSANDRA_SEEDS=cassandra1
-            - CASSANDRA_ENDPOINT_SNITCH=GossipingPropertyFileSnitch
-        volumes:
-            - cassandra2_data:/var/lib/cassandra
-        depends_on:
-            - cassandra1
-
+    # cassandra2:
+    #     image: cassandra:3.0
+    #     container_name: cassandra2
+    #     environment:
+    #         - CASSANDRA_CLUSTER_NAME=ProjetCluster
+    #         - CASSANDRA_DC=datacenter1
+    #         - CASSANDRA_RACK=rack1
+    #         - CASSANDRA_SEEDS=cassandra1
+    #         - CASSANDRA_ENDPOINT_SNITCH=GossipingPropertyFileSnitch
+    #     volumes:
+    #         - cassandra2_data:/var/lib/cassandra
+    #     depends_on:
+    #         - cassandra1
 
     producer:
         build: ../Producer
@@ -105,12 +104,11 @@ services:
         tty: true
         command: ["tail", "-f", "/dev/null"]
         depends_on:
-            - kafka_1 
-            - kafka_2 
-            - cassandra1 
-            - cassandra2 
-         
-volumes:
-    cassandra1_data:
-    cassandra2_data:
-    cassandra3_data:
+            - kafka_1
+            - kafka_2
+            # - cassandra1
+            # - cassandra2
+# volumes:
+#     cassandra1_data:
+#     cassandra2_data:
+#     cassandra3_data:

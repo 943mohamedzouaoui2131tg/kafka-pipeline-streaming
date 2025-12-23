@@ -15,23 +15,50 @@ Ce projet contient un producteur Kafka, deux consommateurs (MongoDB et Cassandra
 
 ## Étapes de démarrage
 
-### 1. Démarrer l’infrastructure Kafka
+### 1. Création du réseau Docker
+
+Avant de démarrer les services, créez un réseau Docker dédié :
+
+```bash
+docker network create abd
+```
+
+### 2. Démarrer l’infrastructure Kafka
 
 Ouvrez un terminal, placez-vous dans le dossier `Brokers/` puis lancez :
 
 ```bash
 cd Brokers
-# Démarrer Kafka, Zookeeper, etc.
 docker-compose up -d
 ```
 
-Vérifiez que les services sont bien démarrés :
+### 3. Démarrer le service MongoDB
+
+Dans un autre terminal, placez-vous dans le dossier `mongo_consumer/` puis lancez :
 
 ```bash
-docker-compose ps
+cd ../mongo_consumer
+docker-compose up -d
 ```
 
-### 3. Démarrer le producteur
+### 4. Connecter les conteneurs au réseau
+
+Une fois les conteneurs démarrés, connectez-les au réseau `abd` :
+
+```bash
+docker network connect abd mongos
+docker network connect abd mongo_consumer
+```
+
+### 5. Initialiser le sharding MongoDB
+
+Exécutez le script bash `mongo-up.sh` pour créer les shards de MongoDB :
+
+```bash
+bash mongo-up.sh
+```
+
+### 4. Démarrer le producteur
 
 Dans un autre terminal :
 
@@ -41,7 +68,7 @@ docker exec -it producer bash
 python3 ./src/producer.py
 ```
 
-### 4. Démarrer les consommateurs
+### 5. Démarrer les consommateurs
 
 #### MongoDB Consumer
 
@@ -62,7 +89,7 @@ docker exec -it cassandra1 cqlsh
 python3 ./src/producer.py
 ```
 
-### 5. Arrêt de l’infrastructure
+### 6. Arrêt de l’infrastructure
 
 Pour tout arrêter :
 
