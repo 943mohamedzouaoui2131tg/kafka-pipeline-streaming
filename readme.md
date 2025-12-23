@@ -76,17 +76,17 @@ python3 ./src/producer.py
 
 docker exec -it mongo_consumer bash
 
-python3 ./src/producer.py
+python3 ./src/consumer.py
 
 ```
 
 #### Cassandra Consumer
 
 ```bash
-docker exec -it cassandra1 cqlsh
+docker exec -it cassandra_consumer bash
 
 
-python3 ./src/producer.py
+python3 ./src/consumer.py
 ```
 
 ### 6. Arrêt de l’infrastructure
