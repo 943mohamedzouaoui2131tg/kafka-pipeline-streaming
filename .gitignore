@@ -2,5 +2,4 @@
 env/
 **/env/
 *.parquet
-/Data/datasets_json/*
-/Data/datasets_parquet/*
+*.json
