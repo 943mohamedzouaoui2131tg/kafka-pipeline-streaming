@@ -35,7 +35,7 @@ la table de Cassandra :
 CREATE KEYSPACE Projet_bd
 WITH replication = {
   'class': 'NetworkTopologyStrategy',
-  'datacenter1': 3
+  'datacenter1': 2
 };
 ===================
  USE Projet_bd;
