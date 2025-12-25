@@ -8,18 +8,18 @@ from pymongo import MongoClient, errors
 load_dotenv()
 KAFKA_BROKER_ADDRESS1 = os.getenv("KAFKA_BROKER1")
 KAFKA_BROKER_ADDRESS2 = os.getenv("KAFKA_BROKER2")
-MONGO_URI = os.getenv("MONGO_URI")
+# MONGO_URI = os.getenv("MONGO_URI")
 
-try:
-    client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000)
-    db = client.BDABD
-    collection = db.taxi_events
-    # Test de connexion
-    client.admin.command('ping')
-    print("Connected to MongoDB shard successfully!")
-except errors.ServerSelectionTimeoutError as e:
-    print(f"Cannot connect to MongoDB: {e}")
-    exit(1)
+# try:
+#     client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000)
+#     db = client.BDABD
+#     collection = db.taxi_events
+#     # Test de connexion
+#     client.admin.command('ping')
+#     print("Connected to MongoDB shard successfully!")
+# except errors.ServerSelectionTimeoutError as e:
+#     print(f"Cannot connect to MongoDB: {e}")
+#     exit(1)
 
 try:
     consumer = KafkaConsumer(
@@ -35,13 +35,13 @@ try:
     try:
         for message in consumer:
             print(f"Received message: Topic: {message.topic}, Partition: {message.partition}, Offset: {message.offset}, Value: {message.value}")
-            data = message.value
-            if 'pickup_borough_id' not in data:
-                data['pickup_borough_id'] = (data.get('id') % 3) + 1
-            try:
-                collection.insert_one(data)
-            except errors.PyMongoError as e:
-                print(f"Error inserting to MongoDB: {e}")
+            # data = message.value
+            # if 'pickup_borough_id' not in data:
+            #     data['pickup_borough_id'] = (data.get('id') % 3) + 1
+            # try:
+            #     collection.insert_one(data)
+            # except errors.PyMongoError as e:
+            #     print(f"Error inserting to MongoDB: {e}")
 
     finally:
         consumer.close()

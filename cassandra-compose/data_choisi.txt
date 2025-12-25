@@ -1,3 +1,6 @@
+docker exec -it cassandra1 cqlsh
+--------------------------------
+
 les donner utliser :
 
 PULocationID,
