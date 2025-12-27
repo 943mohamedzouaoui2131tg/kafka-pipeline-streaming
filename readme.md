@@ -37,7 +37,7 @@ docker-compose up -d
 Dans un autre terminal, placez-vous dans le dossier `mongo_consumer/` puis lancez :
 
 ```bash
-cd ../mongo_consumer
+cd ../mongo_compose
 docker-compose up -d
 ```
 
@@ -95,5 +95,10 @@ Pour tout arrêter :
 
 ```bash
 cd ../Brokers
+docker-compose down
+```
+
+```bash
+cd ../mongo_compose
 docker-compose down
 ```
