@@ -128,7 +128,7 @@ try:
                     "ratecode_id": data.get("RatecodeID",None),
                     "store_and_fwd_flag": data.get("store_and_fwd_flag",None),
                     "source": "kafka",
-                    "ingestion_time": f'{datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")}'
+                    "insertion_time": f'{datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")}'
                 }
             }
             
