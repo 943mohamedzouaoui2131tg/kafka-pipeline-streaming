@@ -34,7 +34,7 @@ docker-compose up -d
 
 ### 3. Démarrer le service MongoDB
 
-Dans un autre terminal, placez-vous dans le dossier `mongo_consumer/` puis lancez :
+Dans un autre terminal, placez-vous dans le dossier `mongo_compose/` puis lancez :
 
 ```bash
 cd ../mongo_compose
