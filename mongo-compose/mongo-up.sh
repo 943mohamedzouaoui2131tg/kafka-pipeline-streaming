@@ -91,11 +91,11 @@ sh.enableSharding("BDABD");
 docker exec mongos mongosh --port 27019 --eval '
 use BDABD;
 db.createCollection("taxi_events");
-db.taxi_events.createIndex({ "pickup_borough_id": 1 });
+db.taxi_events.createIndex({ "pickup.location.borough_id": 1 });
 '
 
 docker exec mongos mongosh --port 27019 --eval '
-sh.shardCollection("BDABD.taxi_events", { "pickup_borough_id": 1 });
+sh.shardCollection("BDABD.taxi_events", { "pickup.location.borough_id": 1 });
 '
 
 echo ""
