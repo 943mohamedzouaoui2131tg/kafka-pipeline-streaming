@@ -37,7 +37,7 @@ docker-compose up -d
 Dans un autre terminal, placez-vous dans le dossier `mongo_consumer/` puis lancez :
 
 ```bash
-cd ../mongo_consumer
+cd ../mongo_compose
 docker-compose up -d
 ```
 
@@ -83,9 +83,26 @@ python3 ./src/consumer.py
 #### Cassandra Consumer
 
 ```bash
-docker exec -it cassandra_consumer bash
+cd cassandra-compose 
 
+docker-compose up -d 
+bash cassandra-init-Rf1.sh
+bash cassandra-init-Rf2.sh
+bash cassandra-init-Rf3.sh
+```
+## Lancement du Consumer Cassandra
+```bash
+cd .. 
+cd cassandra_consumer
+```
 
+### Si aucun environnement virtuel n’existe encore :
+```bash
+python -m venv env 
+pip install -r requirements.txt
+```
+```bash
+env\Scripts\activate 
 python3 ./src/consumer.py
 ```
 
