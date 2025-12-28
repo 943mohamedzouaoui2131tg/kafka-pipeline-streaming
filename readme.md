@@ -1,6 +1,9 @@
-# Guide de démarrage du projet Kafka-Producer/Consumer
+# Guide de démarrage du Projet Pipeline Streaming Taxi avec Kafka, MongoDB et Cassandra
 
-Ce projet contient un producteur Kafka, deux consommateurs (MongoDB et Cassandra),
+`L’objectif de projet ce projet` concevoir, implémenter et tester un pipeline Big Data temps réel pour le traitement de flux de données issues du service de taxis de New York , L’idée est:
+
+-   utiliser Kafka pour la gestion du streaming
+     - comparerez deux bases NoSQL distribuées performantes, MongoDB et Cassandra
 
 ## Prérequis
 
@@ -8,10 +11,84 @@ Ce projet contient un producteur Kafka, deux consommateurs (MongoDB et Cassandra
 
 ## Structure du projet
 
--   `Producer/` : Producteur Kafka (Python)
--   `mongo_consumer/` : Consommateur MongoDB (Python)
--   `cassandra_consumer/` : Consommateur Cassandra (Python)
--   `Brokers/` : Infrastructure Kafka/Zookeeper (Docker Compose)
+```text
+.
+├── .gitignore
+├── README.md
+│
+├── Brokers
+│   └── docker-compose.yml
+│       # Le fichier Docker Compose définit les services
+│       # pour la création de deux brokers Kafka, des consommateurs
+│       # MongoDB et Cassandra, ainsi que le producteur.
+│
+├── cassandra-compose
+│   ├── cassandra-init-Rf1.sh
+│   ├── cassandra-init-Rf2.sh
+│   ├── cassandra-init-Rf3.sh
+│   ├── data_choisi.txt
+│   └── docker-compose.yml
+│
+├── cassandra_consumer
+│   ├── .dockerignore
+│   ├── .env
+│   ├── Dockerfile
+│   │   # Le fichier Docker contient les instructions
+│   │   # pour construire l'image
+│   ├── requirements.txt
+│   │   # Liste les dépendances nécessaires pour démarrer le conteneur
+│   └── src
+│       └── consumer.py
+│           # Script Python pour lancer le consumer Cassandra
+│
+├── Data
+│   # Les données
+│   ├── parquet_to_json.py
+│   ├── README.md
+│   ├── datasets_json
+│   │   ├── dd.yml
+│   │   ├── test.json
+│   │   ├── yellow_tripdata_2024-01.json
+│   │   └── yellow_tripdata_2024-02.json
+│   ├── datasets_parquet
+│   │   ├── yellow_tripdata_2024-01.parquet
+│   │   └── yellow_tripdata_2024-02.parquet
+│   └── taxi_zones
+│       ├── taxi_zones.dbf
+│       ├── taxi_zones.mxd
+│       ├── taxi_zones.prj
+│       ├── taxi_zones.sbn
+│       ├── taxi_zones.sbx
+│       ├── taxi_zones.shp
+│       └── taxi_zones.shx
+│
+├── mongo-compose
+│   ├── docker-compose.yml
+│   │   # Fichier Docker Compose pour configurer les serveurs MongoDB
+│   └── mongo-up.sh
+│
+├── mongo_consumer
+│   ├── .dockerignore
+│   ├── .env
+│   ├── Dockerfile
+│   ├── requirements.txt
+│   └── src
+│       └── consumer.py
+│           # Script Python pour lancer le consumer MongoDB
+│
+└── Producer
+    # Fichiers du producteur
+    ├── .dockerignore
+    ├── .env
+    ├── Dockerfile
+    │   # Image pour construire le producteur
+    ├── requirements.txt
+    │   # Bibliothèques nécessaires pour démarrer le conteneur
+    └── src
+        └── producer.py
+            # Script Python pour lancer le producteur et produire des données
+
+```
 
 ## Étapes de démarrage
 
@@ -28,8 +105,21 @@ docker network create abd
 Ouvrez un terminal, placez-vous dans le dossier `Brokers/` puis lancez :
 
 ```bash
+
 cd Brokers
+
 docker-compose up -d
+
+```
+
+On exécute toujours le script cp.sh pour copier ces données depuis notre ordinateur vers le conteneur du producteur afin de les diffuser (streaming)
+
+```bash
+
+cd Data
+
+bash cp.sh # ou .\cp.sh
+
 ```
 
 ### 3. Démarrer le service MongoDB
@@ -37,8 +127,11 @@ docker-compose up -d
 Dans un autre terminal, placez-vous dans le dossier `mongo_compose/` puis lancez :
 
 ```bash
+
 cd ../mongo_compose
+
 docker-compose up -d
+
 ```
 
 ### 4. Connecter les conteneurs au réseau
@@ -46,8 +139,11 @@ docker-compose up -d
 Une fois les conteneurs démarrés, connectez-les au réseau `abd` :
 
 ```bash
+
 docker network connect abd mongos
+
 docker network connect abd mongo_consumer
+
 ```
 
 ### 5. Initialiser le sharding MongoDB
@@ -55,67 +151,87 @@ docker network connect abd mongo_consumer
 Exécutez le script bash `mongo-up.sh` pour créer les shards de MongoDB :
 
 ```bash
+
 bash mongo-up.sh
+
 ```
 
-### 4. Démarrer le producteur
+### 7. Démarrer le producteur
 
 Dans un autre terminal :
 
 ```bash
+
 docker exec -it producer bash
 
+pip3 install -r requirements.txt
+
 python3 ./src/producer.py
+
 ```
 
-### 5. Démarrer les consommateurs
+### 8. Démarrer les consommateurs
 
 #### MongoDB Consumer
 
 ```bash
 
+
+
 docker exec -it mongo_consumer bash
 
+pip3 install -r requirements.txt
+
 python3 ./src/consumer.py
+
+
 
 ```
 
 #### Cassandra Consumer
 
 ```bash
-cd cassandra-compose 
 
-docker-compose up -d 
+cd cassandra-compose
+
+docker-compose up -d
+
 bash cassandra-init-Rf1.sh
+
 bash cassandra-init-Rf2.sh
+
 bash cassandra-init-Rf3.sh
-```
-## Lancement du Consumer Cassandra
-```bash
-cd .. 
-cd cassandra_consumer
+
 ```
 
-### Si aucun environnement virtuel n’existe encore :
+#### Lancement du Consumer Cassandra
+
 ```bash
-python -m venv env 
+
+docker exec -it cassandra_consumer bash
+
 pip install -r requirements.txt
-```
-```bash
-env\Scripts\activate 
+
 python3 ./src/consumer.py
+
 ```
 
-### 6. Arrêt de l’infrastructure
+### 9. Arrêt de l’infrastructure
 
 Pour tout arrêter :
 
 ```bash
+
 cd ../Brokers
+
 docker-compose down
+
 ```
 
 ```bash
+
 cd ../mongo_compose
+
 docker-compose down
+
 ```
