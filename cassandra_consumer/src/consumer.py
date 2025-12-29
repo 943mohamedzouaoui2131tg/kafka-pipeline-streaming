@@ -314,15 +314,6 @@ try:
         while True:
             messages = consumer.poll(timeout_ms=timeout_seconds * 1000, max_records=500)
             
-            if not messages:
-                no_message_count += 1
-                print(f"⏳ Aucun message ({no_message_count}/{max_empty_polls})...")
-                
-                if no_message_count >= max_empty_polls:
-                    print(f"\n✅ Tous les messages traités")
-                    break
-                continue
-            
             no_message_count = 0
             
             for topic_partition, records in messages.items():
