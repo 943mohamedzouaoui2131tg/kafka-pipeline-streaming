@@ -1,13 +1,13 @@
 #!/bin/sh
 
 docker exec -i cassandra1 cqlsh <<'EOF'
-CREATE KEYSPACE IF NOT EXISTS Projet_bd
+CREATE KEYSPACE IF NOT EXISTS Projet_bd_Rf3
 WITH replication = {
   'class': 'NetworkTopologyStrategy',
   'datacenter1': 3
 };
 
-USE Projet_bd-Rf3;
+USE Projet_bd_Rf3;
 
 CREATE TABLE IF NOT EXISTS trips_by_borough_time (
     borough TEXT,

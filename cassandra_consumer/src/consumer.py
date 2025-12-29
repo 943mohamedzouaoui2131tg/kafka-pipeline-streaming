@@ -297,12 +297,12 @@ try:
 
     print("🎧 Listening for messages...")
 
-    cluster = Cluster(["localhost"], port=3000)
+    cluster = Cluster(["cassandra1"], port=9042)
     session = cluster.connect()
     print("✅ Connected to Cassandra")
 
-    session.execute("USE Projet_bd-Rf3;")
-    print("✅ Using keyspace: Projet_bd-Rf3")
+    session.execute("USE Projet_bd_Rf3;")
+    print("✅ Using keyspace: Projet_bd_Rf3")
     print(f"⏱️  Arrêt automatique après inactivité\n")
 
     try:

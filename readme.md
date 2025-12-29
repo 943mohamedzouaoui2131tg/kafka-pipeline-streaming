@@ -164,8 +164,6 @@ Dans un autre terminal :
 
 docker exec -it producer bash
 
-pip3 install -r requirements.txt
-
 python3 ./src/producer.py
 
 ```
@@ -179,8 +177,6 @@ python3 ./src/producer.py
 
 
 docker exec -it mongo_consumer bash
-
-pip3 install -r requirements.txt
 
 python3 ./src/consumer.py
 
@@ -197,10 +193,16 @@ cd cassandra-compose
 docker-compose up -d
 
 bash cassandra-init-Rf1.sh
+#Powershell:
+& "C:\Program Files\Git\bin\bash.exe" cassandra-init-Rf1.sh
 
 bash cassandra-init-Rf2.sh
+#Powershell:
+& "C:\Program Files\Git\bin\bash.exe" cassandra-init-Rf2.sh
 
 bash cassandra-init-Rf3.sh
+#Powershell:
+& "C:\Program Files\Git\bin\bash.exe" cassandra-init-Rf3.sh
 
 ```
 
@@ -210,13 +212,21 @@ bash cassandra-init-Rf3.sh
 
 docker exec -it cassandra_consumer bash
 
-pip install -r requirements.txt
-
 python3 ./src/consumer.py
 
 ```
+### 9. Connecter les conteneurs au réseau
 
-### 9. Arrêt de l’infrastructure
+Une fois les conteneurs démarrés, connectez-les au réseau `abd` :
+
+```bash
+
+docker network connect abd cassandra1
+
+
+```
+
+### 10. Arrêt de l’infrastructure
 
 Pour tout arrêter :
 
