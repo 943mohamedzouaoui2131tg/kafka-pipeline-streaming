@@ -47,7 +47,7 @@ CREATE TABLE IF NOT EXISTS trips_by_pickup_zone (
     pickup_date DATE,
     pickup_hour INT,
     pickup_zone TEXT,
-    service_zone TEXT,
+    
 
     sum_passenger_count DOUBLE,
     avg_trip_distance DOUBLE,

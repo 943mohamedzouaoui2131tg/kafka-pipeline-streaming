@@ -223,7 +223,7 @@ Une fois les conteneurs démarrés, connectez-les au réseau `abd` :
 
 docker network connect abd cassandra1
 
-
+docker network connect abd cassandra_consumer 
 ```
 
 ### 10. Arrêt de l’infrastructure
