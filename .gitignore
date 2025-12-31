@@ -5,3 +5,5 @@ env/
 
 /Data/datasets_json/*
 /Data/datasets_parquet/*
+
+/Web_App/venv/
