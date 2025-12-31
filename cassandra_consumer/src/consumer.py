@@ -8,6 +8,7 @@ import os
 from cassandra.cluster import Cluster
 from datetime import datetime
 from collections import defaultdict
+import time
 
 load_dotenv()
 KAFKA_BROKER_ADDRESS1 = os.getenv("KAFKA_BROKER1")
@@ -47,7 +48,16 @@ buffer_vendor = defaultdict(lambda: {
     'count_payment_dispute': 0, 'count_payment_unknown': 0, 'count_payment_voided': 0,
 })
 
-BATCH_SIZE = 100
+BATCH_SIZE = 10
+
+# Statistiques globales
+stats = {
+    'total_messages_received': 0,
+    'total_messages_processed': 0,
+    'total_rows_inserted': 0,
+    'last_flush_time': None,
+    'start_time': datetime.now()
+}
 
 def aggregate_trip_in_buffers(trip):
     """Agrège dans tous les buffers en une seule passe"""
@@ -65,13 +75,8 @@ def aggregate_trip_in_buffers(trip):
         dropoff_zone = trip['DOLocationID']['zone']
         vendor_id = trip.get('VendorID')
         
-        # Service zone (à déterminer selon vos règles métier)
-        service_zone = "Manhattan" if borough == "Manhattan" else "Other"
-        
-        # Calcul de la durée en secondes
         duration = (dropoff_dt - pickup_dt).total_seconds()
         
-        # Valeurs communes
         passenger_count = float(trip.get('passenger_count', 0))
         trip_distance = float(trip.get('trip_distance', 0))
         fare_amount = float(trip.get('fare_amount', 0))
@@ -105,7 +110,7 @@ def aggregate_trip_in_buffers(trip):
         buf1['count_vendor_verifone'] += 1 if vendor_id == 2 else 0
         
         # 2. Buffer trips_by_pickup_zone
-        key2 = (borough, year_month, pickup_date, pickup_hour, pickup_zone, service_zone)
+        key2 = (borough, year_month, pickup_date, pickup_hour, pickup_zone)
         buf2 = buffer_pickup_zone[key2]
         buf2['sum_passenger_count'] += passenger_count
         buf2['sum_trip_distance'] += trip_distance
@@ -160,12 +165,13 @@ def aggregate_trip_in_buffers(trip):
         return False
 
 def flush_all_buffers_to_cassandra(session):
-    """Flush tous les buffers vers Cassandra"""
+    """Flush tous les buffers vers Cassandra et affiche les statistiques"""
+    flush_start = datetime.now()
     total_written = 0
     
     # 1. Flush trips_by_borough_time
     if buffer_borough_time:
-        print(f"\n🔄 Flush table 1/4: trips_by_borough_time ({len(buffer_borough_time)} lignes)")
+        table1_count = len(buffer_borough_time)
         query = session.prepare("""
             INSERT INTO trips_by_borough_time (
                 borough, year_month, pickup_date, pickup_hour,
@@ -193,26 +199,28 @@ def flush_all_buffers_to_cassandra(session):
             ))
             total_written += 1
         buffer_borough_time.clear()
+    else:
+        table1_count = 0
     
     # 2. Flush trips_by_pickup_zone
     if buffer_pickup_zone:
-        print(f"🔄 Flush table 2/4: trips_by_pickup_zone ({len(buffer_pickup_zone)} lignes)")
+        table2_count = len(buffer_pickup_zone)
         query = session.prepare("""
             INSERT INTO trips_by_pickup_zone (
-                borough, year_month, pickup_date, pickup_hour, pickup_zone, service_zone,
+                borough, year_month, pickup_date, pickup_hour, pickup_zone,
                 sum_passenger_count, avg_trip_distance, sum_fare_amount,
                 sum_tip_amount, sum_total_amount,
                 count_payment_card, count_payment_cash, count_payment_free,
                 count_payment_dispute, count_payment_unknown, count_payment_voided,
                 count_vendor_cmt, count_vendor_verifone
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """)
         
         for key, data in buffer_pickup_zone.items():
-            borough, year_month, pickup_date, pickup_hour, pickup_zone, service_zone = key
+            borough, year_month, pickup_date, pickup_hour, pickup_zone = key
             avg_distance = data['sum_trip_distance'] / data['trip_count'] if data['trip_count'] > 0 else 0.0
             session.execute(query, (
-                borough, year_month, pickup_date, pickup_hour, pickup_zone, service_zone,
+                borough, year_month, pickup_date, pickup_hour, pickup_zone,
                 data['sum_passenger_count'], avg_distance, data['sum_fare_amount'],
                 data['sum_tip_amount'], data['sum_total_amount'],
                 data['count_payment_card'], data['count_payment_cash'], data['count_payment_free'],
@@ -221,10 +229,12 @@ def flush_all_buffers_to_cassandra(session):
             ))
             total_written += 1
         buffer_pickup_zone.clear()
+    else:
+        table2_count = 0
     
     # 3. Flush trips_by_route
     if buffer_route:
-        print(f"🔄 Flush table 3/4: trips_by_route ({len(buffer_route)} lignes)")
+        table3_count = len(buffer_route)
         query = session.prepare("""
             INSERT INTO trips_by_route (
                 pickup_location_id, pickup_zone, dropoff_location_id, dropoff_zone,
@@ -254,10 +264,12 @@ def flush_all_buffers_to_cassandra(session):
             ))
             total_written += 1
         buffer_route.clear()
+    else:
+        table3_count = 0
     
     # 4. Flush trips_by_vendor
     if buffer_vendor:
-        print(f"🔄 Flush table 4/4: trips_by_vendor ({len(buffer_vendor)} lignes)")
+        table4_count = len(buffer_vendor)
         query = session.prepare("""
             INSERT INTO trips_by_vendor (
                 vendor_id, borough, year_month, pickup_date, pickup_location_id,
@@ -281,9 +293,45 @@ def flush_all_buffers_to_cassandra(session):
             ))
             total_written += 1
         buffer_vendor.clear()
+    else:
+        table4_count = 0
     
-    print(f"✅ Total: {total_written} lignes écrites dans 4 tables\n")
+    flush_duration = (datetime.now() - flush_start).total_seconds()
+    stats['total_rows_inserted'] += total_written
+    stats['last_flush_time'] = datetime.now()
+    
+    # Affichage des statistiques d'insertion
+    if total_written > 0:
+        print(f"\n{'='*70}")
+        print(f"💾 INSERTION CASSANDRA - {datetime.now().strftime('%H:%M:%S')}")
+        print(f"{'='*70}")
+        print(f"  📊 trips_by_borough_time : {table1_count:>5} lignes")
+        print(f"  📊 trips_by_pickup_zone  : {table2_count:>5} lignes")
+        print(f"  📊 trips_by_route        : {table3_count:>5} lignes")
+        print(f"  📊 trips_by_vendor       : {table4_count:>5} lignes")
+        print(f"  {'─'*66}")
+        print(f"  ✅ Total inséré          : {total_written:>5} lignes en {flush_duration:.2f}s")
+        print(f"  📈 Total cumulé          : {stats['total_rows_inserted']:>5} lignes")
+        print(f"{'='*70}\n")
+    
     return total_written
+
+def print_stats():
+    """Affiche les statistiques globales"""
+    uptime = datetime.now() - stats['start_time']
+    hours = int(uptime.total_seconds() // 3600)
+    minutes = int((uptime.total_seconds() % 3600) // 60)
+    seconds = int(uptime.total_seconds() % 60)
+    
+    print(f"\n{'─'*70}")
+    print(f"📊 STATISTIQUES - Temps d'exécution: {hours:02d}h {minutes:02d}m {seconds:02d}s")
+    print(f"{'─'*70}")
+    print(f"  📥 Messages reçus      : {stats['total_messages_received']}")
+    print(f"  ✅ Messages traités    : {stats['total_messages_processed']}")
+    print(f"  💾 Lignes insérées     : {stats['total_rows_inserted']}")
+    if stats['last_flush_time']:
+        print(f"  🕒 Dernier flush       : {stats['last_flush_time'].strftime('%H:%M:%S')}")
+    print(f"{'─'*70}\n")
 
 try:
     consumer = KafkaConsumer(
@@ -295,49 +343,54 @@ try:
         value_deserializer=lambda x: json.loads(x.decode('utf-8')) 
     )
 
-    print("🎧 Listening for messages...")
+    print("🎧 Consumer Cassandra démarré - Mode Continu")
+    print(f"⏱️  Démarrage : {stats['start_time'].strftime('%Y-%m-%d %H:%M:%S')}")
 
-    cluster = Cluster(["cassandra1"], port=9042)
+    cluster = Cluster([CASSANDRA_BROKER], port=9042)
     session = cluster.connect()
-    print("✅ Connected to Cassandra")
+    print("✅ Connecté à Cassandra")
 
     session.execute("USE Projet_bd_Rf3;")
-    print("✅ Using keyspace: Projet_bd_Rf3")
-    print(f"⏱️  Arrêt automatique après inactivité\n")
+    print("✅ Keyspace: Projet_bd_Rf3")
+    print(f"📦 Taille de batch: {BATCH_SIZE} messages")
+    print(f"{'='*70}\n")
 
-    try:
-        message_count = 0
-        timeout_seconds = 5
-        no_message_count = 0
-        max_empty_polls = 5
+    message_count = 0
+    
+    while True:
+        messages = consumer.poll(timeout_ms=1000, max_records=500)
         
-        while True:
-            messages = consumer.poll(timeout_ms=timeout_seconds * 1000, max_records=500)
-            
-            no_message_count = 0
-            
+        if messages:
             for topic_partition, records in messages.items():
                 for message in records:
+                    stats['total_messages_received'] += 1
                     message_count += 1
                     trip_data = message.value
                     
                     if aggregate_trip_in_buffers(trip_data):
-                        if message_count % 50 == 0:
-                            print(f"📊 {message_count} messages | Buffers: T1={len(buffer_borough_time)}, T2={len(buffer_pickup_zone)}, T3={len(buffer_route)}, T4={len(buffer_vendor)}")
+                        stats['total_messages_processed'] += 1
+                        print(f"📨 Message reçu #{message_count}")
                     
+                    # Flush tous les BATCH_SIZE messages
                     if message_count % BATCH_SIZE == 0:
                         flush_all_buffers_to_cassandra(session)
-                
-    except KeyboardInterrupt:
-        print("\n\n⚠️  Interruption, flush final...")
-        flush_all_buffers_to_cassandra(session)
-    finally:
-        flush_all_buffers_to_cassandra(session)
-        consumer.close()
-        cluster.shutdown()
-        print(f"\n✅ Total: {message_count} messages traités")
+            
+except KeyboardInterrupt:
+    print("\n\n⚠️  Interruption par l'utilisateur (Ctrl+C)")
+    print("🔄 Flush final des buffers...")
+    flush_all_buffers_to_cassandra(session)
+    print_stats()
+    consumer.close()
+    cluster.shutdown()
+    print("\n✅ Consumer arrêté proprement")
     
 except Exception as e:
     print(f"\n❌ Erreur: {e}")
     import traceback
     traceback.print_exc()
+    try:
+        flush_all_buffers_to_cassandra(session)
+        consumer.close()
+        cluster.shutdown()
+    except:
+        pass

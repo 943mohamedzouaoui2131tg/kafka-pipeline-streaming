@@ -78,3 +78,5 @@ services:
         depends_on:
             - kafka_1
             - kafka_2
+        
+
