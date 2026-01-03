@@ -389,7 +389,7 @@ def main():
             group_id='cassandra', 
             bootstrap_servers=[KAFKA_BROKER_ADDRESS1, KAFKA_BROKER_ADDRESS2], 
             auto_offset_reset='earliest',
-            enable_auto_commit=True,
+            enable_auto_commit=False,
             value_deserializer=lambda x: json.loads(x.decode('utf-8')) 
         )
 
@@ -429,6 +429,7 @@ def main():
                         # Flush every BATCH_SIZE messages
                         if message_count % BATCH_SIZE == 0:
                             flush_all_buffers_to_cassandra(session)
+                            consumer.commit()  # Commit offsets after flush
                     
                     if not running:
                         break

@@ -45,7 +45,7 @@ try:
         group_id='mongo', 
         bootstrap_servers=[KAFKA_BROKER_ADDRESS1 , KAFKA_BROKER_ADDRESS2], 
         auto_offset_reset='earliest', 
-        enable_auto_commit=True,
+        enable_auto_commit=False,
         value_deserializer=lambda x: json.loads(x.decode('utf-8'))
     )
 
@@ -135,7 +135,8 @@ try:
             
             try:
                 collection.insert_one(data)
-                print(f"Inserted: {mongo_doc}")
+                consumer.commit()
+                print(f"Inserted and commit the insert: {mongo_doc}")
             except errors.PyMongoError as e:
                 print(f"Error inserting to MongoDB: {e}")
 
