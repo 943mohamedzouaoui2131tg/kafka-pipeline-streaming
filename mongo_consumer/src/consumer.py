@@ -117,11 +117,12 @@ try:
                 },
 
                 "metrics": {
-                    "distance_km": trip_distance,
-                    "duration_h": round(duration,2),
-                    "speed_kmh": round(speed, 2),
-                    "price_per_km": round(price_per_km, 2)
-                },
+                "distance_km": trip_distance,
+                "duration_h": round(duration, 2) if duration is not None else None,
+                "speed_kmh": round(speed, 2) if speed is not None else None,
+                "price_per_km": round(price_per_km, 2) if price_per_km is not None else None
+            },
+
 
                 "metadata": {
                     "vendor_id": data.get("VendorID",None),

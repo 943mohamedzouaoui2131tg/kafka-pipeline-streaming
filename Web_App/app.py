@@ -38,11 +38,15 @@ streaming_stats = {
     "trips_per_minute": 0,
     "total_revenue": 0,
     "connected": False,
-    "errors": 0
+    "errors": 0,
+    "start_time": None
 }
 
 # Track trips for rate calculation
 trip_timestamps = []
+
+# Control flag for consumer thread
+consumer_running = True
 
 def calculate_trips_per_minute():
     """Calculate trips per minute based on recent timestamps"""
@@ -54,91 +58,128 @@ def calculate_trips_per_minute():
 
 def kafka_consumer_thread():
     """Background thread to consume Kafka messages and emit to frontend"""
-    global streaming_stats, trip_timestamps
+    global streaming_stats, trip_timestamps, consumer_running
     
     print(f"Starting Kafka consumer for topic: {KAFKA_TOPIC}")
     print(f"Connecting to brokers: {KAFKA_BROKER1}, {KAFKA_BROKER2}")
     
     consumer = None
     retry_count = 0
-    max_retries = 5
+    max_retries = 10
     
-    while retry_count < max_retries:
+    while consumer_running and retry_count < max_retries:
         try:
+            # Use 'earliest' to read all messages from beginning, or 'latest' for only new messages
+            # Change to 'earliest' if you want to process all existing messages
             consumer = KafkaConsumer(
                 KAFKA_TOPIC,
                 bootstrap_servers=[KAFKA_BROKER1, KAFKA_BROKER2],
                 value_deserializer=lambda m: json.loads(m.decode('utf-8')),
                 key_deserializer=lambda m: m.decode('utf-8') if m else None,
-                auto_offset_reset='latest',
+                auto_offset_reset='earliest',  # Changed to 'earliest' to read all messages
                 enable_auto_commit=True,
-                group_id='taxi-analytics-dashboard',
-                consumer_timeout_ms=1000
+                group_id='taxi-analytics-dashboard-v1',  # Change group_id to start fresh
+                consumer_timeout_ms=5000,  # Increased timeout
+                session_timeout_ms=30000,
+                heartbeat_interval_ms=10000,
+                max_poll_records=100,
+                max_poll_interval_ms=300000
             )
             
             streaming_stats["connected"] = True
+            streaming_stats["start_time"] = datetime.now()
             print("✅ Kafka consumer connected successfully!")
             socketio.emit('kafka_status', {'status': 'connected', 'message': 'Kafka consumer connected'})
             
-            for message in consumer:
+            # Reset retry count on successful connection
+            retry_count = 0
+            
+            # Continuous polling loop
+            while consumer_running:
                 try:
-                    trip_data = message.value
-                    current_time = time.time()
+                    # Poll for messages
+                    message_batch = consumer.poll(timeout_ms=1000, max_records=100)
                     
-                    # Update statistics
-                    streaming_stats["total_trips"] += 1
-                    streaming_stats["last_trip_time"] = current_time
-                    trip_timestamps.append(current_time)
+                    if not message_batch:
+                        # No messages, continue polling
+                        continue
                     
-                    # Calculate revenue
-                    total_amount = trip_data.get("total_amount", 0)
-                    streaming_stats["total_revenue"] += total_amount
-                    
-                    # Update trips per minute
-                    streaming_stats["trips_per_minute"] = calculate_trips_per_minute()
-                    
-                    # Extract relevant info for display
-                    pickup_zone = trip_data.get("PULocationID", {}).get("zone", "Unknown")
-                    dropoff_zone = trip_data.get("DOLocationID", {}).get("zone", "Unknown")
-                    borough = trip_data.get("PULocationID", {}).get("borough", "Unknown")
-                    
-                    recent_trip = {
-                        "timestamp": datetime.now().strftime("%H:%M:%S"),
-                        "trip_id": trip_data.get("trip_id", "N/A"),
-                        "pickup_zone": pickup_zone,
-                        "dropoff_zone": dropoff_zone,
-                        "borough": borough,
-                        "amount": total_amount,
-                        "distance": trip_data.get("trip_distance", 0),
-                        "passengers": trip_data.get("passenger_count", 0)
-                    }
-                    
-                    # Add to recent trips (keep last 15)
-                    streaming_stats["recent_trips"].insert(0, recent_trip)
-                    if len(streaming_stats["recent_trips"]) > 15:
-                        streaming_stats["recent_trips"].pop()
-                    
-                    # Emit to all connected clients
-                    socketio.emit('new_trip', {
-                        "trip": recent_trip,
-                        "stats": {
-                            "total_trips": streaming_stats["total_trips"],
-                            "trips_per_minute": streaming_stats["trips_per_minute"],
-                            "total_revenue": round(streaming_stats["total_revenue"], 2),
-                            "recent_trips": streaming_stats["recent_trips"]
-                        }
-                    })
-                    
-                    # Log every 10 trips
-                    if streaming_stats["total_trips"] % 10 == 0:
-                        print(f"📊 Processed {streaming_stats['total_trips']} trips | "
-                              f"Rate: {streaming_stats['trips_per_minute']}/min | "
-                              f"Revenue: ${streaming_stats['total_revenue']:.2f}")
-                    
-                except Exception as e:
-                    streaming_stats["errors"] += 1
-                    print(f"❌ Error processing message: {e}")
-                    socketio.emit('kafka_error', {'error': str(e)})
+                    # Process all messages in batch
+                    for topic_partition, messages in message_batch.items():
+                        for message in messages:
+                            try:
+                                trip_data = message.value
+                                current_time = time.time()
+                                
+                                # Update statistics
+                                streaming_stats["total_trips"] += 1
+                                streaming_stats["last_trip_time"] = current_time
+                                trip_timestamps.append(current_time)
+                                
+                                # Calculate revenue - handle None values
+                                total_amount = trip_data.get("total_amount")
+                                if total_amount is not None:
+                                    try:
+                                        streaming_stats["total_revenue"] += float(total_amount)
+                                    except (ValueError, TypeError):
+                                        pass
+                                
+                                # Update trips per minute
+                                streaming_stats["trips_per_minute"] = calculate_trips_per_minute()
+                                
+                                # Extract relevant info for display
+                                pu_location = trip_data.get("PULocationID", {})
+                                do_location = trip_data.get("DOLocationID", {})
+                                
+                                pickup_zone = pu_location.get("zone", "Unknown") if isinstance(pu_location, dict) else "Unknown"
+                                dropoff_zone = do_location.get("zone", "Unknown") if isinstance(do_location, dict) else "Unknown"
+                                borough = pu_location.get("borough", "Unknown") if isinstance(pu_location, dict) else "Unknown"
+                                
+                                recent_trip = {
+                                    "timestamp": datetime.now().strftime("%H:%M:%S"),
+                                    "trip_id": trip_data.get("trip_id", "N/A"),
+                                    "pickup_zone": pickup_zone,
+                                    "dropoff_zone": dropoff_zone,
+                                    "borough": borough,
+                                    "amount": float(total_amount) if total_amount is not None else 0,
+                                    "distance": float(trip_data.get("trip_distance", 0)),
+                                    "passengers": int(trip_data.get("passenger_count", 0))
+                                }
+                                
+                                # Add to recent trips (keep last 15)
+                                streaming_stats["recent_trips"].insert(0, recent_trip)
+                                if len(streaming_stats["recent_trips"]) > 15:
+                                    streaming_stats["recent_trips"].pop()
+                                
+                                # Emit to all connected clients every message
+                                socketio.emit('new_trip', {
+                                    "trip": recent_trip,
+                                    "stats": {
+                                        "total_trips": streaming_stats["total_trips"],
+                                        "trips_per_minute": streaming_stats["trips_per_minute"],
+                                        "total_revenue": round(streaming_stats["total_revenue"], 2),
+                                        "recent_trips": streaming_stats["recent_trips"][:10]
+                                    }
+                                })
+                                
+                                # Log every 10 trips
+                                if streaming_stats["total_trips"] % 10 == 0:
+                                    print(f"📊 Processed {streaming_stats['total_trips']} trips | "
+                                          f"Rate: {streaming_stats['trips_per_minute']}/min | "
+                                          f"Revenue: ${streaming_stats['total_revenue']:.2f}")
+                                
+                            except Exception as e:
+                                streaming_stats["errors"] += 1
+                                print(f"❌ Error processing message: {e}")
+                                socketio.emit('kafka_error', {'error': str(e)})
+                
+                except Exception as poll_error:
+                    print(f"⚠️ Poll error: {poll_error}")
+                    time.sleep(1)
+                    continue
+            
+            # Graceful shutdown
+            print("🛑 Consumer loop stopped")
             
         except KafkaError as e:
             retry_count += 1
@@ -150,7 +191,7 @@ def kafka_consumer_thread():
                 'retry': retry_count
             })
             
-            if retry_count < max_retries:
+            if retry_count < max_retries and consumer_running:
                 wait_time = min(2 ** retry_count, 30)  # Exponential backoff, max 30s
                 print(f"⏳ Retrying in {wait_time} seconds...")
                 time.sleep(wait_time)
@@ -160,14 +201,19 @@ def kafka_consumer_thread():
                 
         except Exception as e:
             print(f"❌ Unexpected error in Kafka consumer: {e}")
+            import traceback
+            traceback.print_exc()
             streaming_stats["connected"] = False
             socketio.emit('kafka_status', {'status': 'error', 'message': str(e)})
             break
         
         finally:
             if consumer:
-                consumer.close()
-                print("Kafka consumer closed")
+                try:
+                    consumer.close()
+                    print("✅ Kafka consumer closed gracefully")
+                except Exception as e:
+                    print(f"⚠️ Error closing consumer: {e}")
 
 @app.route("/")
 def index():
@@ -176,13 +222,18 @@ def index():
 @app.route("/api/streaming-stats")
 def get_streaming_stats():
     """API endpoint to get current streaming statistics"""
+    uptime = None
+    if streaming_stats["start_time"]:
+        uptime = str(datetime.now() - streaming_stats["start_time"]).split('.')[0]
+    
     return jsonify({
         "total_trips": streaming_stats["total_trips"],
         "trips_per_minute": streaming_stats["trips_per_minute"],
         "total_revenue": round(streaming_stats["total_revenue"], 2),
         "connected": streaming_stats["connected"],
         "errors": streaming_stats["errors"],
-        "recent_trips": streaming_stats["recent_trips"][:5]
+        "recent_trips": streaming_stats["recent_trips"][:5],
+        "uptime": uptime
     })
 
 @app.route("/api/health")
@@ -192,7 +243,8 @@ def health_check():
         "status": "healthy" if streaming_stats["connected"] else "degraded",
         "kafka_connected": streaming_stats["connected"],
         "total_trips_processed": streaming_stats["total_trips"],
-        "errors": streaming_stats["errors"]
+        "errors": streaming_stats["errors"],
+        "total_revenue": round(streaming_stats["total_revenue"], 2)
     })
 
 @socketio.on('connect')
@@ -226,14 +278,28 @@ def handle_stats_request():
         "recent_trips": streaming_stats["recent_trips"][:10]
     })
 
+def cleanup():
+    """Cleanup function for graceful shutdown"""
+    global consumer_running
+    consumer_running = False
+    print("🧹 Cleaning up...")
+
 if __name__ == "__main__":
     print("🚀 Starting NYC Taxi Analytics Dashboard...")
     print(f"📡 Kafka brokers: {KAFKA_BROKER1}, {KAFKA_BROKER2}")
     print(f"📊 Topic: {KAFKA_TOPIC}")
+    print(f"📖 Reading from: earliest (all messages)")
     
     # Start Kafka consumer in background thread
     kafka_thread = threading.Thread(target=kafka_consumer_thread, daemon=True)
     kafka_thread.start()
     
     print("🌐 Starting Flask server on http://localhost:5000")
-    socketio.run(app, debug=True, host='localhost', port=5000)
+    
+    try:
+        socketio.run(app, debug=True, host='localhost', port=5000, use_reloader=False)
+    except KeyboardInterrupt:
+        print("\n⚠️ Shutting down...")
+        cleanup()
+    finally:
+        print("✅ Application stopped")

@@ -417,375 +417,554 @@
 
     <script>
         const socket = io('http://localhost:5000');
-        let mongoRevenueChart, mongoTripsChart, mongoPassengersChart;
-        let cassandraRevenueChart, cassandraHourlyChart, comparisonChart;
-        let performanceData = { mongo: [], cassandra: [] };
+let mongoRevenueChart, mongoTripsChart, mongoPassengersChart;
+let cassandraRevenueChart, cassandraHourlyChart, comparisonChart;
+let performanceData = { mongo: [], cassandra: [] };
 
-        socket.on('connect', () => {
-            console.log('Connected to server');
-        });
+socket.on('connect', () => {
+    console.log('Connected to server');
+});
 
-        socket.on('connection_response', (data) => {
-            console.log('Connection response:', data);
-            document.getElementById('streamingStatus').textContent = 'Connected';
-            document.getElementById('statusIndicator').className = 'status-indicator active';
-            
-            if (data.stats) {
-                updateStreamingStats(data.stats);
-            }
-        });
+socket.on('connection_response', (data) => {
+    console.log('Connection response:', data);
+    document.getElementById('streamingStatus').textContent = 'Connected';
+    document.getElementById('statusIndicator').className = 'status-indicator active';
+    
+    if (data.stats) {
+        updateStreamingStats(data.stats);
+    }
+});
 
-        socket.on('disconnect', () => {
-            console.log('Disconnected from server');
-            document.getElementById('streamingStatus').textContent = 'Disconnected';
-            document.getElementById('statusIndicator').className = 'status-indicator inactive';
-        });
+socket.on('disconnect', () => {
+    console.log('Disconnected from server');
+    document.getElementById('streamingStatus').textContent = 'Disconnected';
+    document.getElementById('statusIndicator').className = 'status-indicator inactive';
+});
 
-        socket.on('kafka_status', (data) => {
-            console.log('Kafka status:', data);
-            if (data.status === 'connected') {
-                document.getElementById('streamingStatus').textContent = 'Streaming Active';
-                document.getElementById('statusIndicator').className = 'status-indicator active';
-            } else {
-                document.getElementById('streamingStatus').textContent = data.status;
-                document.getElementById('statusIndicator').className = 'status-indicator inactive';
-            }
-        });
+socket.on('kafka_status', (data) => {
+    console.log('Kafka status:', data);
+    if (data.status === 'connected') {
+        document.getElementById('streamingStatus').textContent = 'Streaming Active';
+        document.getElementById('statusIndicator').className = 'status-indicator active';
+    } else {
+        document.getElementById('streamingStatus').textContent = data.status;
+        document.getElementById('statusIndicator').className = 'status-indicator inactive';
+    }
+});
 
-        socket.on('kafka_error', (data) => {
-            console.error('Kafka error:', data.error);
-        });
+socket.on('kafka_error', (data) => {
+    console.error('Kafka error:', data.error);
+});
 
-        socket.on('new_trip', (data) => {
-            updateStreamingStats(data.stats);
-            
-            // Add visual feedback for new trip
-            const tripsList = document.getElementById('recentTripsList');
-            const firstTrip = tripsList.querySelector('.trip-item');
-            if (firstTrip) {
-                firstTrip.style.animation = 'none';
-                setTimeout(() => {
-                    firstTrip.style.animation = 'slideIn 0.3s ease-out';
-                }, 10);
-            }
-        });
+socket.on('new_trip', (data) => {
+    updateStreamingStats(data.stats);
+    
+    // Add visual feedback for new trip
+    const tripsList = document.getElementById('recentTripsList');
+    if (tripsList) {
+        const firstTrip = tripsList.querySelector('.trip-item');
+        if (firstTrip) {
+            firstTrip.style.animation = 'none';
+            setTimeout(() => {
+                firstTrip.style.animation = 'slideIn 0.3s ease-out';
+            }, 10);
+        }
+    }
+});
 
-        function updateStreamingStats(stats) {
-            document.getElementById('mongoInserts').textContent = stats.total_trips || 0;
-            document.getElementById('tripsPerSecond').textContent = stats.trips_per_minute || 0;
-            
-            // Update recent trips list
-            if (stats.recent_trips && stats.recent_trips.length > 0) {
-                const tripsList = document.getElementById('recentTripsList');
-                tripsList.innerHTML = stats.recent_trips.map(trip => `
-                    <div class="trip-item">
-                        <div>
-                            <strong>${trip.pickup_zone}</strong> → ${trip.dropoff_zone}
-                            <br>
-                            <small style="color: #666;">${trip.timestamp} | ${trip.borough}</small>
-                        </div>
-                        <div style="text-align: right;">
-                            <strong>${trip.amount.toFixed(2)}</strong>
-                            <br>
-                            <small style="color: #666;">${trip.distance.toFixed(2)} mi | ${trip.passengers} pax</small>
-                        </div>
+function updateStreamingStats(stats) {
+    if (!stats) return;
+    
+    const mongoInserts = document.getElementById('mongoInserts');
+    const tripsPerSecond = document.getElementById('tripsPerSecond');
+    
+    if (mongoInserts) mongoInserts.textContent = stats.total_trips || 0;
+    if (tripsPerSecond) tripsPerSecond.textContent = stats.trips_per_minute || 0;
+    
+    // Update recent trips list
+    if (stats.recent_trips && Array.isArray(stats.recent_trips) && stats.recent_trips.length > 0) {
+        const tripsList = document.getElementById('recentTripsList');
+        if (tripsList) {
+            tripsList.innerHTML = stats.recent_trips.map(trip => `
+                <div class="trip-item">
+                    <div>
+                        <strong>${trip.pickup_zone || 'Unknown'}</strong> → ${trip.dropoff_zone || 'Unknown'}
+                        <br>
+                        <small style="color: #666;">${trip.timestamp || ''} | ${trip.borough || 'Unknown'}</small>
                     </div>
-                `).join('');
+                    <div style="text-align: right;">
+                        <strong>$${(trip.amount || 0).toFixed(2)}</strong>
+                        <br>
+                        <small style="color: #666;">${(trip.distance || 0).toFixed(2)} mi | ${trip.passengers || 0} pax</small>
+                    </div>
+                </div>
+            `).join('');
+        }
+    }
+}
+
+function showTab(tabName) {
+    document.querySelectorAll('.tab').forEach(tab => tab.classList.remove('active'));
+    document.querySelectorAll('.content-panel').forEach(panel => panel.classList.remove('active'));
+    
+    event.target.classList.add('active');
+    const panel = document.getElementById(tabName + 'Panel');
+    if (panel) panel.classList.add('active');
+}
+
+async function runMongoQuery(queryType) {
+    const resultDiv = document.getElementById(`mongo${queryType.charAt(0).toUpperCase() + queryType.slice(1)}Result`);
+    if (!resultDiv) {
+        console.error('Result div not found');
+        return;
+    }
+    
+    resultDiv.innerHTML = '<div class="loading">Loading...</div>';
+
+    let url = '';
+    try {
+        switch(queryType) {
+            case 'revenue':
+                const limit = document.getElementById('mongoRevenueLimit')?.value || 10;
+                url = `/mongo/analytics/top-zones-by-revenue?limit=${limit}`;
+                break;
+            case 'trips':
+                const tripsLimit = document.getElementById('mongoTripsLimit')?.value || 10;
+                url = `/mongo/analytics/top-zones-by-trips?limit=${tripsLimit}`;
+                break;
+            case 'passengers':
+                url = '/mongo/analytics/passenger-distribution';
+                break;
+            case 'anomalies':
+                url = '/mongo/analytics/anomaly-detection';
+                break;
+            default:
+                throw new Error('Unknown query type');
+        }
+
+        const response = await fetch(url);
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
+        const result = await response.json();
+        
+        // Check if result has error
+        if (result.error) {
+            throw new Error(result.error);
+        }
+        
+        // Ensure data exists
+        if (!result.data || !Array.isArray(result.data)) {
+            throw new Error('Invalid data format received');
+        }
+        
+        performanceData.mongo.push({
+            query: queryType,
+            time: result.execution_time_ms || 0
+        });
+
+        resultDiv.innerHTML = `
+            <div class="execution-time">Execution time: ${result.execution_time_ms || 0}ms</div>
+            <p>Results: ${result.count || 0} records</p>
+        `;
+
+        if (queryType === 'revenue' && result.data.length > 0) {
+            renderMongoRevenueChart(result.data);
+        } else if (queryType === 'trips' && result.data.length > 0) {
+            renderMongoTripsChart(result.data);
+        } else if (queryType === 'passengers' && result.data.length > 0) {
+            renderMongoPassengersChart(result.data);
+        } else if (queryType === 'anomalies' && result.data.length > 0) {
+            renderAnomaliesTable(result.data, resultDiv);
+        } else {
+            resultDiv.innerHTML += '<p>No data available</p>';
+        }
+
+        updateComparisonChart();
+    } catch (error) {
+        console.error('Query error:', error);
+        resultDiv.innerHTML = `<div style="color: red;">Error: ${error.message}</div>`;
+    }
+}
+
+async function runCassandraQuery(queryType) {
+    const resultDiv = document.getElementById(`cassandra${queryType.charAt(0).toUpperCase() + queryType.slice(1)}Result`);
+    if (!resultDiv) {
+        console.error('Result div not found');
+        return;
+    }
+    
+    resultDiv.innerHTML = '<div class="loading">Loading...</div>';
+
+    let url = '';
+    try {
+        if (queryType === 'revenue') {
+            const borough = document.getElementById('cassandraBorough')?.value;
+            const yearMonth = document.getElementById('cassandraYearMonth')?.value;
+            
+            if (!borough || !yearMonth) {
+                throw new Error('Please select both borough and year-month');
             }
-        }
-
-        function showTab(tabName) {
-            document.querySelectorAll('.tab').forEach(tab => tab.classList.remove('active'));
-            document.querySelectorAll('.content-panel').forEach(panel => panel.classList.remove('active'));
             
-            event.target.classList.add('active');
-            document.getElementById(tabName + 'Panel').classList.add('active');
-        }
-
-        async function runMongoQuery(queryType) {
-            const resultDiv = document.getElementById(`mongo${queryType.charAt(0).toUpperCase() + queryType.slice(1)}Result`);
-            resultDiv.innerHTML = '<div class="loading">Loading...</div>';
-
-            let url = '';
-            switch(queryType) {
-                case 'revenue':
-                    const limit = document.getElementById('mongoRevenueLimit').value;
-                    url = `/mongo/analytics/top-zones-by-revenue?limit=${limit}`;
-                    break;
-                case 'trips':
-                    const tripsLimit = document.getElementById('mongoTripsLimit').value;
-                    url = `/mongo/analytics/top-zones-by-trips?limit=${tripsLimit}`;
-                    break;
-                case 'passengers':
-                    url = '/mongo/analytics/passenger-distribution';
-                    break;
-                case 'anomalies':
-                    url = '/mongo/analytics/anomaly-detection';
-                    break;
+            url = `/cassandra/analytics/top-zones-revenue?borough=${encodeURIComponent(borough)}&year_month=${encodeURIComponent(yearMonth)}`;
+        } else if (queryType === 'hourly') {
+            const borough = document.getElementById('cassandraHourBorough')?.value;
+            const yearMonth = document.getElementById('cassandraHourYearMonth')?.value;
+            
+            if (!borough || !yearMonth) {
+                throw new Error('Please select both borough and year-month');
             }
-
-            try {
-                const response = await fetch(url);
-                const result = await response.json();
-                
-                performanceData.mongo.push({
-                    query: queryType,
-                    time: result.execution_time_ms
-                });
-
-                resultDiv.innerHTML = `
-                    <div class="execution-time">Execution time: ${result.execution_time_ms}ms</div>
-                    <p>Results: ${result.count} records</p>
-                `;
-
-                if (queryType === 'revenue') {
-                    renderMongoRevenueChart(result.data);
-                } else if (queryType === 'trips') {
-                    renderMongoTripsChart(result.data);
-                } else if (queryType === 'passengers') {
-                    renderMongoPassengersChart(result.data);
-                } else if (queryType === 'anomalies') {
-                    renderAnomaliesTable(result.data, resultDiv);
-                }
-
-                updateComparisonChart();
-            } catch (error) {
-                resultDiv.innerHTML = `<div style="color: red;">Error: ${error.message}</div>`;
-            }
-        }
-
-        async function runCassandraQuery(queryType) {
-            const resultDiv = document.getElementById(`cassandra${queryType.charAt(0).toUpperCase() + queryType.slice(1)}Result`);
-            resultDiv.innerHTML = '<div class="loading">Loading...</div>';
-
-            let url = '';
-            if (queryType === 'revenue') {
-                const borough = document.getElementById('cassandraBorough').value;
-                const yearMonth = document.getElementById('cassandraYearMonth').value;
-                url = `/cassandra/analytics/top-zones-revenue?borough=${borough}&year_month=${yearMonth}`;
-            } else if (queryType === 'hourly') {
-                const borough = document.getElementById('cassandraHourBorough').value;
-                const yearMonth = document.getElementById('cassandraHourYearMonth').value;
-                url = `/cassandra/analytics/hourly-performance?borough=${borough}&year_month=${yearMonth}`;
-            }
-
-            try {
-                const response = await fetch(url);
-                const result = await response.json();
-                
-                performanceData.cassandra.push({
-                    query: queryType,
-                    time: result.execution_time_ms
-                });
-
-                resultDiv.innerHTML = `
-                    <div class="execution-time">Execution time: ${result.execution_time_ms}ms</div>
-                    <p>Results: ${result.count} records</p>
-                `;
-
-                if (queryType === 'revenue') {
-                    renderCassandraRevenueChart(result.data);
-                } else if (queryType === 'hourly') {
-                    renderCassandraHourlyChart(result.data);
-                }
-
-                updateComparisonChart();
-            } catch (error) {
-                resultDiv.innerHTML = `<div style="color: red;">Error: ${error.message}</div>`;
-            }
-        }
-
-        function renderMongoRevenueChart(data) {
-            const ctx = document.getElementById('mongoRevenueChart').getContext('2d');
-            if (mongoRevenueChart) mongoRevenueChart.destroy();
             
-            mongoRevenueChart = new Chart(ctx, {
-                type: 'bar',
-                data: {
-                    labels: data.map(d => d._id),
-                    datasets: [{
-                        label: 'Total Revenue',
-                        data: data.map(d => d.total_revenue),
-                        backgroundColor: 'rgba(102, 126, 234, 0.8)'
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false
-                }
-            });
+            url = `/cassandra/analytics/hourly-performance?borough=${encodeURIComponent(borough)}&year_month=${encodeURIComponent(yearMonth)}`;
+        } else {
+            throw new Error('Unknown query type');
         }
 
-        function renderMongoTripsChart(data) {
-            const ctx = document.getElementById('mongoTripsChart').getContext('2d');
-            if (mongoTripsChart) mongoTripsChart.destroy();
-            
-            mongoTripsChart = new Chart(ctx, {
-                type: 'bar',
-                data: {
-                    labels: data.map(d => d._id),
-                    datasets: [{
-                        label: 'Total Trips',
-                        data: data.map(d => d.total_trips),
-                        backgroundColor: 'rgba(118, 75, 162, 0.8)'
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false
-                }
-            });
+        const response = await fetch(url);
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
+        const result = await response.json();
+        
+        // Check if result has error
+        if (result.error || !result.success) {
+            throw new Error(result.error || 'Query failed');
+        }
+        
+        // Ensure data exists
+        if (!result.data || !Array.isArray(result.data)) {
+            throw new Error('Invalid data format received');
+        }
+        
+        performanceData.cassandra.push({
+            query: queryType,
+            time: result.execution_time_ms || 0
+        });
+
+        resultDiv.innerHTML = `
+            <div class="execution-time">Execution time: ${result.execution_time_ms || 0}ms</div>
+            <p>Results: ${result.count || 0} records</p>
+        `;
+
+        if (queryType === 'revenue' && result.data.length > 0) {
+            renderCassandraRevenueChart(result.data);
+        } else if (queryType === 'hourly' && result.data.length > 0) {
+            renderCassandraHourlyChart(result.data);
+        } else {
+            resultDiv.innerHTML += '<p>No data available for the selected filters</p>';
         }
 
-        function renderMongoPassengersChart(data) {
-            const ctx = document.getElementById('mongoPassengersChart').getContext('2d');
-            if (mongoPassengersChart) mongoPassengersChart.destroy();
-            
-            mongoPassengersChart = new Chart(ctx, {
-                type: 'pie',
-                data: {
-                    labels: data.map(d => `${d._id} passenger(s)`),
-                    datasets: [{
-                        data: data.map(d => d.count),
-                        backgroundColor: [
-                            '#667eea', '#764ba2', '#f093fb', '#4facfe',
-                            '#43e97b', '#fa709a', '#fee140', '#30cfd0'
-                        ]
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false
-                }
-            });
-        }
+        updateComparisonChart();
+    } catch (error) {
+        console.error('Query error:', error);
+        resultDiv.innerHTML = `<div style="color: red;">Error: ${error.message}</div>`;
+    }
+}
 
-        function renderCassandraRevenueChart(data) {
-            const ctx = document.getElementById('cassandraRevenueChart').getContext('2d');
-            if (cassandraRevenueChart) cassandraRevenueChart.destroy();
-            
-            cassandraRevenueChart = new Chart(ctx, {
-                type: 'bar',
-                data: {
-                    labels: data.slice(0, 10).map(d => d.pickup_zone),
-                    datasets: [{
-                        label: 'Total Revenue',
-                        data: data.slice(0, 10).map(d => d.total_revenue),
-                        backgroundColor: 'rgba(102, 126, 234, 0.8)'
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false
-                }
-            });
-        }
-
-        function renderCassandraHourlyChart(data) {
-            const ctx = document.getElementById('cassandraHourlyChart').getContext('2d');
-            if (cassandraHourlyChart) cassandraHourlyChart.destroy();
-            
-            cassandraHourlyChart = new Chart(ctx, {
-                type: 'line',
-                data: {
-                    labels: data.map(d => `${d.pickup_hour}:00`),
-                    datasets: [{
-                        label: 'Total Revenue',
-                        data: data.map(d => d.total_revenue),
-                        borderColor: 'rgba(102, 126, 234, 1)',
-                        backgroundColor: 'rgba(102, 126, 234, 0.2)',
-                        tension: 0.4
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false
-                }
-            });
-        }
-
-        function renderAnomaliesTable(data, container) {
-            const table = `
-                <table>
-                    <thead>
-                        <tr>
-                            <th>Pickup Zone</th>
-                            <th>Distance</th>
-                            <th>Duration (min)</th>
-                            <th>Amount</th>
-                            <th>Issue</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        ${data.slice(0, 20).map(trip => `
-                            <tr>
-                                <td>${trip.PULocationID?.zone || 'Unknown'}</td>
-                                <td>${trip.trip_distance}</td>
-                                <td>${trip.duration_minutes?.toFixed(2) || 'N/A'}</td>
-                                <td>$${trip.total_amount}</td>
-                                <td>${getAnomalyType(trip)}</td>
-                            </tr>
-                        `).join('')}
-                    </tbody>
-                </table>
-            `;
-            container.innerHTML += table;
-        }
-
-        function getAnomalyType(trip) {
-            if (trip.trip_distance === 0) return 'Zero distance';
-            if (trip.duration_minutes <= 0) return 'Invalid duration';
-            if (trip.total_amount <= 0) return 'Invalid amount';
-            return 'High speed';
-        }
-
-        function updateComparisonChart() {
-            const ctx = document.getElementById('comparisonChart').getContext('2d');
-            if (comparisonChart) comparisonChart.destroy();
-            
-            const queries = [...new Set([
-                ...performanceData.mongo.map(d => d.query),
-                ...performanceData.cassandra.map(d => d.query)
-            ])];
-
-            comparisonChart = new Chart(ctx, {
-                type: 'bar',
-                data: {
-                    labels: queries,
-                    datasets: [
-                        {
-                            label: 'MongoDB (ms)',
-                            data: queries.map(q => {
-                                const match = performanceData.mongo.find(d => d.query === q);
-                                return match ? match.time : 0;
-                            }),
-                            backgroundColor: 'rgba(102, 126, 234, 0.8)'
-                        },
-                        {
-                            label: 'Cassandra (ms)',
-                            data: queries.map(q => {
-                                const match = performanceData.cassandra.find(d => d.query === q);
-                                return match ? match.time : 0;
-                            }),
-                            backgroundColor: 'rgba(118, 75, 162, 0.8)'
-                        }
-                    ]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    scales: {
-                        y: {
-                            beginAtZero: true,
-                            title: {
-                                display: true,
-                                text: 'Execution Time (ms)'
-                            }
+function renderMongoRevenueChart(data) {
+    if (!data || !Array.isArray(data) || data.length === 0) {
+        console.warn('No data to render for MongoDB revenue chart');
+        return;
+    }
+    
+    const ctx = document.getElementById('mongoRevenueChart');
+    if (!ctx) {
+        console.error('Canvas element not found');
+        return;
+    }
+    
+    if (mongoRevenueChart) mongoRevenueChart.destroy();
+    
+    mongoRevenueChart = new Chart(ctx.getContext('2d'), {
+        type: 'bar',
+        data: {
+            labels: data.map(d => d._id || 'Unknown'),
+            datasets: [{
+                label: 'Total Revenue ($)',
+                data: data.map(d => d.total_revenue || 0),
+                backgroundColor: 'rgba(102, 126, 234, 0.8)'
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    ticks: {
+                        callback: function(value) {
+                            return '$' + value.toLocaleString();
                         }
                     }
                 }
-            });
+            }
         }
+    });
+}
+
+function renderMongoTripsChart(data) {
+    if (!data || !Array.isArray(data) || data.length === 0) {
+        console.warn('No data to render for MongoDB trips chart');
+        return;
+    }
+    
+    const ctx = document.getElementById('mongoTripsChart');
+    if (!ctx) {
+        console.error('Canvas element not found');
+        return;
+    }
+    
+    if (mongoTripsChart) mongoTripsChart.destroy();
+    
+    mongoTripsChart = new Chart(ctx.getContext('2d'), {
+        type: 'bar',
+        data: {
+            labels: data.map(d => d._id || 'Unknown'),
+            datasets: [{
+                label: 'Total Trips',
+                data: data.map(d => d.total_trips || 0),
+                backgroundColor: 'rgba(118, 75, 162, 0.8)'
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                y: {
+                    beginAtZero: true
+                }
+            }
+        }
+    });
+}
+
+function renderMongoPassengersChart(data) {
+    if (!data || !Array.isArray(data) || data.length === 0) {
+        console.warn('No data to render for MongoDB passengers chart');
+        return;
+    }
+    
+    const ctx = document.getElementById('mongoPassengersChart');
+    if (!ctx) {
+        console.error('Canvas element not found');
+        return;
+    }
+    
+    if (mongoPassengersChart) mongoPassengersChart.destroy();
+    
+    mongoPassengersChart = new Chart(ctx.getContext('2d'), {
+        type: 'pie',
+        data: {
+            labels: data.map(d => `${d._id || 0} passenger(s)`),
+            datasets: [{
+                data: data.map(d => d.count || 0),
+                backgroundColor: [
+                    '#667eea', '#764ba2', '#f093fb', '#4facfe',
+                    '#43e97b', '#fa709a', '#fee140', '#30cfd0'
+                ]
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false
+        }
+    });
+}
+
+function renderCassandraRevenueChart(data) {
+    // CRITICAL FIX: Check if data exists and is an array before calling slice
+    if (!data || !Array.isArray(data) || data.length === 0) {
+        console.warn('No data to render for Cassandra revenue chart');
+        return;
+    }
+    
+    const ctx = document.getElementById('cassandraRevenueChart');
+    if (!ctx) {
+        console.error('Canvas element not found');
+        return;
+    }
+    
+    if (cassandraRevenueChart) cassandraRevenueChart.destroy();
+    
+    // Safely slice the data
+    const topData = data.slice(0, 10);
+    
+    cassandraRevenueChart = new Chart(ctx.getContext('2d'), {
+        type: 'bar',
+        data: {
+            labels: topData.map(d => d.pickup_zone || 'Unknown'),
+            datasets: [{
+                label: 'Total Revenue ($)',
+                data: topData.map(d => d.total_revenue || 0),
+                backgroundColor: 'rgba(102, 126, 234, 0.8)'
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    ticks: {
+                        callback: function(value) {
+                            return '$' + value.toLocaleString();
+                        }
+                    }
+                }
+            }
+        }
+    });
+}
+
+function renderCassandraHourlyChart(data) {
+    if (!data || !Array.isArray(data) || data.length === 0) {
+        console.warn('No data to render for Cassandra hourly chart');
+        return;
+    }
+    
+    const ctx = document.getElementById('cassandraHourlyChart');
+    if (!ctx) {
+        console.error('Canvas element not found');
+        return;
+    }
+    
+    if (cassandraHourlyChart) cassandraHourlyChart.destroy();
+    
+    cassandraHourlyChart = new Chart(ctx.getContext('2d'), {
+        type: 'line',
+        data: {
+            labels: data.map(d => `${d.pickup_hour || 0}:00`),
+            datasets: [{
+                label: 'Total Revenue ($)',
+                data: data.map(d => d.total_revenue || 0),
+                borderColor: 'rgba(102, 126, 234, 1)',
+                backgroundColor: 'rgba(102, 126, 234, 0.2)',
+                tension: 0.4,
+                fill: true
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    ticks: {
+                        callback: function(value) {
+                            return '$' + value.toLocaleString();
+                        }
+                    }
+                }
+            }
+        }
+    });
+}
+
+function renderAnomaliesTable(data, container) {
+    if (!data || !Array.isArray(data) || data.length === 0) {
+        container.innerHTML += '<p>No anomalies found</p>';
+        return;
+    }
+    
+    const table = `
+        <table style="width: 100%; border-collapse: collapse; margin-top: 10px;">
+            <thead>
+                <tr style="background-color: #f5f5f5;">
+                    <th style="padding: 10px; text-align: left; border: 1px solid #ddd;">Pickup Zone</th>
+                    <th style="padding: 10px; text-align: left; border: 1px solid #ddd;">Distance</th>
+                    <th style="padding: 10px; text-align: left; border: 1px solid #ddd;">Duration (min)</th>
+                    <th style="padding: 10px; text-align: left; border: 1px solid #ddd;">Amount</th>
+                    <th style="padding: 10px; text-align: left; border: 1px solid #ddd;">Issue</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${data.slice(0, 20).map(trip => `
+                    <tr>
+                        <td style="padding: 10px; border: 1px solid #ddd;">${trip.PULocationID?.zone || 'Unknown'}</td>
+                        <td style="padding: 10px; border: 1px solid #ddd;">${(trip.trip_distance || 0).toFixed(2)}</td>
+                        <td style="padding: 10px; border: 1px solid #ddd;">${trip.duration_minutes ? trip.duration_minutes.toFixed(2) : 'N/A'}</td>
+                        <td style="padding: 10px; border: 1px solid #ddd;">$${(trip.total_amount || 0).toFixed(2)}</td>
+                        <td style="padding: 10px; border: 1px solid #ddd;">${getAnomalyType(trip)}</td>
+                    </tr>
+                `).join('')}
+            </tbody>
+        </table>
+    `;
+    container.innerHTML += table;
+}
+
+function getAnomalyType(trip) {
+    if (!trip) return 'Unknown';
+    if (trip.trip_distance === 0) return 'Zero distance';
+    if (trip.duration_minutes && trip.duration_minutes <= 0) return 'Invalid duration';
+    if (trip.total_amount && trip.total_amount <= 0) return 'Invalid amount';
+    return 'High speed';
+}
+
+function updateComparisonChart() {
+    const ctx = document.getElementById('comparisonChart');
+    if (!ctx) {
+        console.error('Comparison chart canvas not found');
+        return;
+    }
+    
+    if (comparisonChart) comparisonChart.destroy();
+    
+    const queries = [...new Set([
+        ...performanceData.mongo.map(d => d.query),
+        ...performanceData.cassandra.map(d => d.query)
+    ])];
+
+    if (queries.length === 0) {
+        return; // No data to display yet
+    }
+
+    comparisonChart = new Chart(ctx.getContext('2d'), {
+        type: 'bar',
+        data: {
+            labels: queries,
+            datasets: [
+                {
+                    label: 'MongoDB (ms)',
+                    data: queries.map(q => {
+                        const match = performanceData.mongo.find(d => d.query === q);
+                        return match ? match.time : 0;
+                    }),
+                    backgroundColor: 'rgba(102, 126, 234, 0.8)'
+                },
+                {
+                    label: 'Cassandra (ms)',
+                    data: queries.map(q => {
+                        const match = performanceData.cassandra.find(d => d.query === q);
+                        return match ? match.time : 0;
+                    }),
+                    backgroundColor: 'rgba(118, 75, 162, 0.8)'
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    title: {
+                        display: true,
+                        text: 'Execution Time (ms)'
+                    }
+                }
+            },
+            plugins: {
+                legend: {
+                    display: true,
+                    position: 'top'
+                }
+            }
+        }
+    });
+}
     </script>
 </body>
 </html>

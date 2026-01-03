@@ -4,6 +4,7 @@ env/
 *.parquet
 
 /Data/datasets_json/*
+/Data/raw_json/*
 /Data/datasets_parquet/*
 
 /Web_App/venv/

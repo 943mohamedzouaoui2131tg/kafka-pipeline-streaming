@@ -8,14 +8,15 @@ import os
 from cassandra.cluster import Cluster
 from datetime import datetime
 from collections import defaultdict
-import time
+import signal
+import sys
 
 load_dotenv()
 KAFKA_BROKER_ADDRESS1 = os.getenv("KAFKA_BROKER1")
 KAFKA_BROKER_ADDRESS2 = os.getenv("KAFKA_BROKER2")
 CASSANDRA_BROKER = os.getenv("CASSANDRA_BROKER")
 
-# Buffers pour chaque table
+# Buffers for each table
 buffer_borough_time = defaultdict(lambda: {
     'sum_passenger_count': 0.0, 'sum_fare_amount': 0.0, 'sum_mta_tax': 0.0,
     'sum_tip_amount': 0.0, 'sum_total_amount': 0.0,
@@ -50,7 +51,7 @@ buffer_vendor = defaultdict(lambda: {
 
 BATCH_SIZE = 10
 
-# Statistiques globales
+# Global statistics
 stats = {
     'total_messages_received': 0,
     'total_messages_processed': 0,
@@ -59,8 +60,20 @@ stats = {
     'start_time': datetime.now()
 }
 
+# Global references for cleanup
+consumer = None
+cluster = None
+session = None
+running = True
+
+def signal_handler(sig, frame):
+    """Handle graceful shutdown"""
+    global running
+    print("\n\n⚠️  Interruption détectée (Ctrl+C)")
+    running = False
+
 def aggregate_trip_in_buffers(trip):
-    """Agrège dans tous les buffers en une seule passe"""
+    """Aggregate data into all buffers in a single pass"""
     try:
         pickup_dt = datetime.strptime(trip['tpep_pickup_datetime'], '%Y-%m-%d %H:%M:%S')
         dropoff_dt = datetime.strptime(trip['tpep_dropoff_datetime'], '%Y-%m-%d %H:%M:%S')
@@ -165,7 +178,7 @@ def aggregate_trip_in_buffers(trip):
         return False
 
 def flush_all_buffers_to_cassandra(session):
-    """Flush tous les buffers vers Cassandra et affiche les statistiques"""
+    """Flush all buffers to Cassandra and display statistics"""
     flush_start = datetime.now()
     total_written = 0
     
@@ -300,7 +313,7 @@ def flush_all_buffers_to_cassandra(session):
     stats['total_rows_inserted'] += total_written
     stats['last_flush_time'] = datetime.now()
     
-    # Affichage des statistiques d'insertion
+    # Display insertion statistics
     if total_written > 0:
         print(f"\n{'='*70}")
         print(f"💾 INSERTION CASSANDRA - {datetime.now().strftime('%H:%M:%S')}")
@@ -317,7 +330,7 @@ def flush_all_buffers_to_cassandra(session):
     return total_written
 
 def print_stats():
-    """Affiche les statistiques globales"""
+    """Display global statistics"""
     uptime = datetime.now() - stats['start_time']
     hours = int(uptime.total_seconds() // 3600)
     minutes = int((uptime.total_seconds() % 3600) // 60)
@@ -333,64 +346,102 @@ def print_stats():
         print(f"  🕒 Dernier flush       : {stats['last_flush_time'].strftime('%H:%M:%S')}")
     print(f"{'─'*70}\n")
 
-try:
-    consumer = KafkaConsumer(
-        'taxi_raw', 
-        group_id='cassandra', 
-        bootstrap_servers=[KAFKA_BROKER_ADDRESS1, KAFKA_BROKER_ADDRESS2], 
-        auto_offset_reset='earliest',
-        enable_auto_commit=True,
-        value_deserializer=lambda x: json.loads(x.decode('utf-8')) 
-    )
-
-    print("🎧 Consumer Cassandra démarré - Mode Continu")
-    print(f"⏱️  Démarrage : {stats['start_time'].strftime('%Y-%m-%d %H:%M:%S')}")
-
-    cluster = Cluster([CASSANDRA_BROKER], port=9042)
-    session = cluster.connect()
-    print("✅ Connecté à Cassandra")
-
-    session.execute("USE Projet_bd_Rf3;")
-    print("✅ Keyspace: Projet_bd_Rf3")
-    print(f"📦 Taille de batch: {BATCH_SIZE} messages")
-    print(f"{'='*70}\n")
-
-    message_count = 0
+def cleanup():
+    """Clean shutdown of all resources"""
+    global consumer, cluster, session
     
-    while True:
-        messages = consumer.poll(timeout_ms=1000, max_records=500)
-        
-        if messages:
-            for topic_partition, records in messages.items():
-                for message in records:
-                    stats['total_messages_received'] += 1
-                    message_count += 1
-                    trip_data = message.value
-                    
-                    if aggregate_trip_in_buffers(trip_data):
-                        stats['total_messages_processed'] += 1
-                        print(f"📨 Message reçu #{message_count}")
-                    
-                    # Flush tous les BATCH_SIZE messages
-                    if message_count % BATCH_SIZE == 0:
-                        flush_all_buffers_to_cassandra(session)
-            
-except KeyboardInterrupt:
-    print("\n\n⚠️  Interruption par l'utilisateur (Ctrl+C)")
     print("🔄 Flush final des buffers...")
-    flush_all_buffers_to_cassandra(session)
-    print_stats()
-    consumer.close()
-    cluster.shutdown()
-    print("\n✅ Consumer arrêté proprement")
+    if session:
+        try:
+            flush_all_buffers_to_cassandra(session)
+        except Exception as e:
+            print(f"⚠️  Erreur lors du flush final: {e}")
     
-except Exception as e:
-    print(f"\n❌ Erreur: {e}")
-    import traceback
-    traceback.print_exc()
+    print_stats()
+    
+    if consumer:
+        try:
+            consumer.close()
+            print("✅ Consumer Kafka fermé")
+        except Exception as e:
+            print(f"⚠️  Erreur fermeture consumer: {e}")
+    
+    if cluster:
+        try:
+            cluster.shutdown()
+            print("✅ Connexion Cassandra fermée")
+        except Exception as e:
+            print(f"⚠️  Erreur fermeture Cassandra: {e}")
+    
+    print("\n✅ Consumer arrêté proprement")
+
+def main():
+    global consumer, cluster, session, running
+    
+    # Register signal handler for graceful shutdown
+    signal.signal(signal.SIGINT, signal_handler)
+    signal.signal(signal.SIGTERM, signal_handler)
+    
     try:
-        flush_all_buffers_to_cassandra(session)
-        consumer.close()
-        cluster.shutdown()
-    except:
-        pass
+        # Initialize Kafka consumer
+        consumer = KafkaConsumer(
+            'taxi_raw', 
+            group_id='cassandra', 
+            bootstrap_servers=[KAFKA_BROKER_ADDRESS1, KAFKA_BROKER_ADDRESS2], 
+            auto_offset_reset='earliest',
+            enable_auto_commit=True,
+            value_deserializer=lambda x: json.loads(x.decode('utf-8')) 
+        )
+
+        print("🎧 Consumer Cassandra démarré - Mode Continu")
+        print(f"⏱️  Démarrage : {stats['start_time'].strftime('%Y-%m-%d %H:%M:%S')}")
+
+        # Initialize Cassandra connection
+        cluster = Cluster([CASSANDRA_BROKER], port=9042)
+        session = cluster.connect()
+        print("✅ Connecté à Cassandra")
+
+        session.execute("USE Projet_bd_Rf3;")
+        print("✅ Keyspace: Projet_bd_Rf3")
+        print(f"📦 Taille de batch: {BATCH_SIZE} messages")
+        print(f"{'='*70}\n")
+
+        message_count = 0
+        
+        # Main processing loop - runs continuously
+        while running:
+            messages = consumer.poll(timeout_ms=1000, max_records=500)
+            
+            if messages:
+                for topic_partition, records in messages.items():
+                    for message in records:
+                        if not running:
+                            break
+                            
+                        stats['total_messages_received'] += 1
+                        message_count += 1
+                        trip_data = message.value
+                        
+                        if aggregate_trip_in_buffers(trip_data):
+                            stats['total_messages_processed'] += 1
+                            print(f"📨 Message reçu #{message_count}")
+                        
+                        # Flush every BATCH_SIZE messages
+                        if message_count % BATCH_SIZE == 0:
+                            flush_all_buffers_to_cassandra(session)
+                    
+                    if not running:
+                        break
+        
+        # Graceful shutdown
+        cleanup()
+        
+    except Exception as e:
+        print(f"\n❌ Erreur: {e}")
+        import traceback
+        traceback.print_exc()
+        cleanup()
+        sys.exit(1)
+
+if __name__ == "__main__":
+    main()
