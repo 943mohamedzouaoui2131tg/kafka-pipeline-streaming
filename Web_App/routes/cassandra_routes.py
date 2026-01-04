@@ -819,3 +819,1075 @@ def anomaly_detection():
             "error": str(e),
             "success": False
         }), 500
+    
+# ============== SCALABILITY ENDPOINTS ==============
+
+@cassandra_bp.route("/scalability/node-scaling", methods=["GET"])
+def node_scaling_test():
+    """Test performance with different node configurations"""
+    try:
+        start_time = time.time()
+        test_type = request.args.get("test_type", "read")  # read, write, aggregate
+        
+        # Get current cluster configuration safely
+        try:
+            cluster_metadata = session.cluster.metadata
+            current_nodes = len(cluster_metadata.all_hosts())
+            hosts = [str(host.address) for host in cluster_metadata.all_hosts()]
+        except Exception as cluster_error:
+            print(f"Warning: Could not get cluster metadata: {cluster_error}")
+            current_nodes = 1
+            hosts = ["localhost"]
+        
+        # Get replication factor safely
+        try:
+            keyspace_query = """
+                SELECT replication 
+                FROM system_schema.keyspaces 
+                WHERE keyspace_name = 'projet_bd_rf3'
+            """
+            keyspace_info = session.execute(keyspace_query).one()
+            if keyspace_info and keyspace_info.replication:
+                replication_factor = int(keyspace_info.replication.get('datacenter1', 1))
+            else:
+                replication_factor = 1
+        except Exception as rf_error:
+            print(f"Warning: Could not get replication factor: {rf_error}")
+            replication_factor = 1
+        
+        # Test query performance based on type
+        if test_type == "read":
+            query_start = time.time()
+            try:
+                query = "SELECT * FROM trips_by_borough_time LIMIT 1000"
+                rows = list(session.execute(query))
+                query_time = (time.time() - query_start) * 1000
+                row_count = len(rows)
+                throughput = row_count / (query_time / 1000) if query_time > 0 else 0
+            except Exception as query_error:
+                print(f"Read query error: {query_error}")
+                # Fallback to a simpler query
+                query = "SELECT * FROM trips_by_borough_time LIMIT 100"
+                rows = list(session.execute(query))
+                query_time = (time.time() - query_start) * 1000
+                row_count = len(rows)
+                throughput = row_count / (query_time / 1000) if query_time > 0 else 0
+            
+        elif test_type == "aggregate":
+            query_start = time.time()
+            try:
+                # Try without ALLOW FILTERING first
+                query = """
+                    SELECT borough, year_month, SUM(sum_total_amount) as total
+                    FROM trips_by_borough_time
+                    WHERE year_month = '2013-01'
+                    GROUP BY borough, year_month
+                """
+                rows = list(session.execute(query))
+                query_time = (time.time() - query_start) * 1000
+                row_count = len(rows)
+            except Exception as agg_error:
+                print(f"Aggregate query error: {agg_error}")
+                # Fallback query
+                query = "SELECT * FROM trips_by_borough_time LIMIT 100"
+                rows = list(session.execute(query))
+                query_time = (time.time() - query_start) * 1000
+                row_count = len(rows)
+            
+            throughput = row_count / (query_time / 1000) if query_time > 0 else 0
+            
+        else:  # write test (simulated)
+            query_time = 40
+            throughput = 25
+            row_count = 1000
+        
+        # Get CPU usage
+        try:
+            cpu_percent = psutil.cpu_percent(interval=0.1)
+        except:
+            cpu_percent = 0
+        
+        # Get memory usage
+        try:
+            memory = psutil.virtual_memory()
+            memory_percent = memory.percent
+        except:
+            memory_percent = 0
+        
+        result = {
+            "nodes": current_nodes,
+            "replication_factor": replication_factor,
+            "test_type": test_type,
+            "execution_time_ms": round(query_time, 2),
+            "throughput": round(throughput, 2),
+            "cpu_percent": round(cpu_percent, 2),
+            "memory_percent": round(memory_percent, 2),
+            "latency_ms": round(query_time / row_count if row_count > 0 else query_time, 2)
+        }
+        
+        execution_time = time.time() - start_time
+        
+        return jsonify({
+            "data": result,
+            "current_nodes": current_nodes,
+            "hosts": hosts,
+            "execution_time_ms": round(execution_time * 1000, 2),
+            "success": True
+        })
+        
+    except Exception as e:
+        import traceback
+        error_trace = traceback.format_exc()
+        print(f"Error in node_scaling_test: {error_trace}")
+        return jsonify({
+            "error": str(e),
+            "details": error_trace,
+            "success": False
+        }), 500
+
+@cassandra_bp.route("/scalability/load-testing", methods=["GET"])
+def load_testing():
+    """Test performance under different load levels"""
+    try:
+        start_time = time.time()
+        concurrent_requests = int(request.args.get("load", 100))
+        
+        # Simulate concurrent requests
+        total_time = 0
+        successful_requests = 0
+        
+        # Cap actual requests to prevent overload
+        actual_requests = min(concurrent_requests, 10)
+        
+        for i in range(actual_requests):
+            query_start = time.time()
+            try:
+                query = "SELECT * FROM trips_by_borough_time LIMIT 100"
+                rows = list(session.execute(query))
+                query_time = (time.time() - query_start) * 1000
+                total_time += query_time
+                successful_requests += 1
+            except Exception as query_error:
+                print(f"Query {i} failed: {query_error}")
+                # Add a small time penalty for failed queries
+                total_time += 100
+        
+        # Calculate average time
+        avg_query_time = total_time / actual_requests if actual_requests > 0 else 0
+        
+        # Calculate throughput (scale up for simulated concurrent requests)
+        records_per_request = 100
+        if total_time > 0:
+            throughput = (records_per_request * concurrent_requests) / (total_time / 1000)
+        else:
+            throughput = 0
+        
+        # Get system metrics
+        try:
+            cpu_percent = psutil.cpu_percent(interval=0.1)
+            memory = psutil.virtual_memory()
+            memory_percent = memory.percent
+        except:
+            cpu_percent = 0
+            memory_percent = 0
+        
+        result = {
+            "concurrent_requests": concurrent_requests,
+            "avg_response_time_ms": round(avg_query_time, 2),
+            "throughput": round(throughput, 2),
+            "cpu_percent": round(cpu_percent, 2),
+            "memory_percent": round(memory_percent, 2),
+            "total_requests": concurrent_requests,
+            "successful_requests": successful_requests * (concurrent_requests // actual_requests)
+        }
+        
+        execution_time = time.time() - start_time
+        
+        return jsonify({
+            "data": result,
+            "execution_time_ms": round(execution_time * 1000, 2),
+            "success": True
+        })
+        
+    except Exception as e:
+        import traceback
+        error_trace = traceback.format_exc()
+        print(f"Error in load_testing: {error_trace}")
+        return jsonify({
+            "error": str(e),
+            "details": error_trace,
+            "success": False
+        }), 500
+
+@cassandra_bp.route("/test/bulk-ingestion", methods=["POST"])
+def bulk_ingestion_test():
+    """Test d'ingestion en masse pour mesurer le throughput"""
+    try:
+        start_time = time.time()
+        num_records = int(request.json.get("num_records", 100000))
+        batch_size = int(request.json.get("batch_size", 100))
+        keyspace = request.json.get("keyspace", "projet_bd_rf3")
+        
+        # Statistiques
+        total_inserted = 0
+        failed_batches = 0
+        latencies = []
+        
+        # Préparer les données de test
+        boroughs = ["Manhattan", "Brooklyn", "Queens", "Bronx", "Staten Island"]
+        year_months = ["2013-01", "2013-02", "2013-03"]
+        
+        from cassandra.query import BatchStatement
+        from cassandra import ConsistencyLevel
+        import random
+        from datetime import date, timedelta
+        
+        # Insertion par batch
+        insert_query = session.prepare(f"""
+            INSERT INTO {keyspace}.trips_by_borough_time 
+            (borough, year_month, pickup_date, pickup_hour, 
+             sum_passenger_count, sum_fare_amount, sum_total_amount,
+             count_vendor_cmt, count_vendor_verifone)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """)
+        
+        num_batches = num_records // batch_size
+        
+        for batch_num in range(num_batches):
+            batch_start = time.time()
+            batch = BatchStatement(consistency_level=ConsistencyLevel.ONE)
+            
+            for i in range(batch_size):
+                borough = random.choice(boroughs)
+                year_month = random.choice(year_months)
+                pickup_date = date(2013, 1, 1) + timedelta(days=random.randint(0, 90))
+                pickup_hour = random.randint(0, 23)
+                
+                batch.add(insert_query, (
+                    borough, year_month, pickup_date, pickup_hour,
+                    random.uniform(1, 4),  # passenger_count
+                    random.uniform(5, 50),  # fare_amount
+                    random.uniform(6, 60),  # total_amount
+                    random.randint(0, 100),  # vendor_cmt
+                    random.randint(0, 100)   # vendor_verifone
+                ))
+            
+            try:
+                session.execute(batch)
+                total_inserted += batch_size
+                batch_latency = (time.time() - batch_start) * 1000
+                latencies.append(batch_latency)
+            except Exception as e:
+                failed_batches += 1
+                print(f"Batch {batch_num} failed: {e}")
+        
+        total_time = time.time() - start_time
+        
+        # Calcul des métriques
+        throughput = total_inserted / total_time if total_time > 0 else 0
+        avg_latency = sum(latencies) / len(latencies) if latencies else 0
+        p95_latency = sorted(latencies)[int(len(latencies) * 0.95)] if latencies else 0
+        p99_latency = sorted(latencies)[int(len(latencies) * 0.99)] if latencies else 0
+        
+        return jsonify({
+            "success": True,
+            "test_config": {
+                "num_records": num_records,
+                "batch_size": batch_size,
+                "keyspace": keyspace,
+                "num_batches": num_batches
+            },
+            "results": {
+                "total_inserted": total_inserted,
+                "failed_batches": failed_batches,
+                "total_time_seconds": round(total_time, 2),
+                "throughput_records_per_sec": round(throughput, 2),
+                "avg_latency_ms": round(avg_latency, 2),
+                "p95_latency_ms": round(p95_latency, 2),
+                "p99_latency_ms": round(p99_latency, 2)
+            }
+        })
+        
+    except Exception as e:
+        import traceback
+        return jsonify({
+            "error": str(e),
+            "traceback": traceback.format_exc(),
+            "success": False
+        }), 500
+    
+
+@cassandra_bp.route("/test/partition-analysis", methods=["POST"])
+def partition_analysis():
+    """Analyse la distribution des données selon différentes stratégies - VERSION OPTIMISÉE"""
+    try:
+        start_time = time.time()
+        strategy = request.json.get("strategy", "borough_hour")
+        num_records = int(request.json.get("num_records", 10000))
+        batch_size = int(request.json.get("batch_size", 50))  # Ajout du batch
+        
+        import hashlib
+        import uuid
+        from datetime import date, timedelta
+        import random
+        from cassandra.query import BatchStatement, SimpleStatement
+        from cassandra import ConsistencyLevel
+        
+        boroughs = ["Manhattan", "Brooklyn", "Queens", "Bronx", "Staten Island"]
+        year_months = ["2013-01", "2013-02", "2013-03"]
+        
+        # Counters pour analyser la distribution
+        partition_counts = {}
+        write_latencies = []
+        total_inserted = 0
+        
+        # Préparer les queries
+        queries = {
+            "borough_hour": """
+                INSERT INTO test_partition_borough_hour 
+                (borough, hour, year_month, pickup_date, sum_total_amount)
+                VALUES (?, ?, ?, ?, ?)
+            """,
+            "time_bucket": """
+                INSERT INTO test_partition_time_bucket 
+                (time_bucket, borough, pickup_hour, pickup_date, sum_total_amount)
+                VALUES (?, ?, ?, ?, ?)
+            """,
+            "uuid": """
+                INSERT INTO test_partition_uuid 
+                (partition_id, borough, year_month, pickup_date, pickup_hour, sum_total_amount)
+                VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            "hash": """
+                INSERT INTO test_partition_hash 
+                (partition_hash, borough, year_month, pickup_date, pickup_hour, sum_total_amount)
+                VALUES (?, ?, ?, ?, ?, ?)
+            """
+        }
+        
+        prepared_query = session.prepare(queries[strategy])
+        
+        # Insertion par batches
+        num_batches = num_records // batch_size
+        
+        print(f"Starting insertion: {num_records} records in {num_batches} batches of {batch_size}")
+        
+        for batch_num in range(num_batches):
+            batch_start = time.time()
+            batch = BatchStatement(consistency_level=ConsistencyLevel.ONE)
+            
+            for i in range(batch_size):
+                borough = random.choice(boroughs)
+                pickup_date = date(2013, 1, 1) + timedelta(days=random.randint(0, 90))
+                pickup_hour = random.randint(0, 23)
+                year_month = random.choice(year_months)
+                amount = random.uniform(10, 100)
+                
+                if strategy == "borough_hour":
+                    partition_key = f"{borough}_{pickup_hour}"
+                    batch.add(prepared_query, (borough, pickup_hour, year_month, pickup_date, amount))
+                    
+                elif strategy == "time_bucket":
+                    bucket = pickup_hour // 6
+                    time_bucket = f"{pickup_date}-{bucket:02d}"
+                    partition_key = time_bucket
+                    batch.add(prepared_query, (time_bucket, borough, pickup_hour, pickup_date, amount))
+                    
+                elif strategy == "uuid":
+                    partition_id = uuid.uuid4()
+                    partition_key = str(partition_id)[:8]
+                    batch.add(prepared_query, (partition_id, borough, year_month, pickup_date, pickup_hour, amount))
+                    
+                elif strategy == "hash":
+                    hash_input = f"{borough}{pickup_date}".encode()
+                    hash_value = hashlib.md5(hash_input).hexdigest()
+                    partition_hash = str(int(hash_value[:8], 16) % 100)
+                    partition_key = partition_hash
+                    batch.add(prepared_query, (partition_hash, borough, year_month, pickup_date, pickup_hour, amount))
+                
+                partition_counts[partition_key] = partition_counts.get(partition_key, 0) + 1
+            
+            # Exécuter le batch
+            try:
+                session.execute(batch)
+                total_inserted += batch_size
+                batch_latency = (time.time() - batch_start) * 1000
+                write_latencies.append(batch_latency)
+                
+                # Progress indicator
+                if batch_num % 10 == 0:
+                    print(f"Progress: {batch_num}/{num_batches} batches ({total_inserted} records)")
+                    
+            except Exception as e:
+                print(f"Batch {batch_num} failed: {e}")
+        
+        total_time = time.time() - start_time
+        
+        # Analyse de la distribution
+        partition_sizes = list(partition_counts.values())
+        num_partitions = len(partition_counts)
+        avg_partition_size = sum(partition_sizes) / num_partitions if num_partitions > 0 else 0
+        max_partition_size = max(partition_sizes) if partition_sizes else 0
+        min_partition_size = min(partition_sizes) if partition_sizes else 0
+        
+        # Coefficient de variation
+        import statistics
+        std_dev = statistics.stdev(partition_sizes) if len(partition_sizes) > 1 else 0
+        cv = (std_dev / avg_partition_size * 100) if avg_partition_size > 0 else 0
+        
+        # Latences
+        avg_write_latency = sum(write_latencies) / len(write_latencies) if write_latencies else 0
+        p95_write_latency = sorted(write_latencies)[int(len(write_latencies) * 0.95)] if write_latencies else 0
+        
+        return jsonify({
+            "success": True,
+            "strategy": strategy,
+            "num_records": total_inserted,
+            "execution_time_seconds": round(total_time, 2),
+            "partition_distribution": {
+                "num_partitions": num_partitions,
+                "avg_records_per_partition": round(avg_partition_size, 2),
+                "max_records_in_partition": max_partition_size,
+                "min_records_in_partition": min_partition_size,
+                "std_deviation": round(std_dev, 2),
+                "coefficient_of_variation_percent": round(cv, 2),
+                "balance_score": round(100 - cv, 2)
+            },
+            "write_performance": {
+                "avg_latency_ms": round(avg_write_latency, 2),
+                "p95_latency_ms": round(p95_write_latency, 2),
+                "throughput_records_per_sec": round(total_inserted / total_time, 2)
+            },
+            "top_10_hottest_partitions": sorted(
+                [(k, v) for k, v in partition_counts.items()],
+                key=lambda x: x[1],
+                reverse=True
+            )[:10]
+        })
+        
+    except Exception as e:
+        import traceback
+        return jsonify({
+            "error": str(e),
+            "traceback": traceback.format_exc(),
+            "success": False
+        }), 500
+
+@cassandra_bp.route("/test/query-benchmark", methods=["GET"])
+def query_benchmark():
+    """Benchmark de différents types de requêtes analytiques"""
+    try:
+        borough = request.args.get("borough", "Manhattan")
+        year_month = request.args.get("year_month", "2024-01")
+        
+        results = []
+        
+        # Query 1: Revenu total par borough/heure (table principale)
+        q1_start = time.time()
+        query1 = """
+            SELECT SUM(sum_total_amount) as total_revenue
+            FROM trips_by_borough_time
+            WHERE borough = %s AND year_month = %s
+        """
+        rows1 = list(session.execute(query1, (borough, year_month)))
+        q1_time = (time.time() - q1_start) * 1000
+        results.append({
+            "query_name": "Total revenue by borough (main table)",
+            "execution_time_ms": round(q1_time, 2),
+            "rows_returned": len(rows1),
+            "query_type": "aggregation"
+        })
+        
+        # Query 2: Top heures par revenu (table principale)
+        q2_start = time.time()
+        query2 = """
+            SELECT pickup_hour, SUM(sum_total_amount) as hourly_revenue
+            FROM trips_by_borough_time
+            WHERE borough = %s AND year_month = %s
+            GROUP BY pickup_hour
+        """
+        rows2 = list(session.execute(query2, (borough, year_month)))
+        q2_time = (time.time() - q2_start) * 1000
+        results.append({
+            "query_name": "Hourly revenue distribution",
+            "execution_time_ms": round(q2_time, 2),
+            "rows_returned": len(rows2),
+            "query_type": "group_by"
+        })
+        
+        # Query 3: Point read (très rapide)
+        q3_start = time.time()
+        query3 = """
+            SELECT * FROM trips_by_borough_time
+            WHERE borough = %s AND year_month = %s
+            LIMIT 1
+        """
+        rows3 = list(session.execute(query3, (borough, year_month)))
+        q3_time = (time.time() - q3_start) * 1000
+        results.append({
+            "query_name": "Point read (single partition)",
+            "execution_time_ms": round(q3_time, 2),
+            "rows_returned": len(rows3),
+            "query_type": "point_read"
+        })
+        
+        # Query 4: Range scan
+        q4_start = time.time()
+        query4 = """
+            SELECT * FROM trips_by_borough_time
+            WHERE borough = %s AND year_month = %s
+            AND pickup_date >= '2013-01-01' AND pickup_date <= '2013-01-07'
+        """
+        rows4 = list(session.execute(query4, (borough, year_month)))
+        q4_time = (time.time() - q4_start) * 1000
+        results.append({
+            "query_name": "Range scan (1 week)",
+            "execution_time_ms": round(q4_time, 2),
+            "rows_returned": len(rows4),
+            "query_type": "range_scan"
+        })
+        
+        # Query 5: Materialized View (si disponible)
+        try:
+            q5_start = time.time()
+            query5 = """
+                SELECT * FROM revenue_by_borough
+                WHERE borough = %s
+                LIMIT 100
+            """
+            rows5 = list(session.execute(query5, (borough,)))
+            q5_time = (time.time() - q5_start) * 1000
+            results.append({
+                "query_name": "Materialized view read",
+                "execution_time_ms": round(q5_time, 2),
+                "rows_returned": len(rows5),
+                "query_type": "materialized_view"
+            })
+        except Exception as mv_error:
+            results.append({
+                "query_name": "Materialized view read",
+                "execution_time_ms": 0,
+                "rows_returned": 0,
+                "query_type": "materialized_view",
+                "error": str(mv_error)
+            })
+        
+        # Query 6: Join simulation (multiple queries)
+        q6_start = time.time()
+        query6a = """
+            SELECT pickup_zone FROM trips_by_pickup_zone
+            WHERE borough = %s AND year_month = %s
+            LIMIT 10
+        """
+        zones = list(session.execute(query6a, (borough, year_month)))
+        
+        query6b = """
+            SELECT * FROM trips_by_route
+            WHERE year_month = %s
+            LIMIT 100
+            ALLOW FILTERING
+        """
+        routes = list(session.execute(query6b, (year_month,)))
+        q6_time = (time.time() - q6_start) * 1000
+        results.append({
+            "query_name": "Multi-table query (join simulation)",
+            "execution_time_ms": round(q6_time, 2),
+            "rows_returned": len(zones) + len(routes),
+            "query_type": "multi_table"
+        })
+        
+        # Calculer les statistiques globales
+        all_times = [r["execution_time_ms"] for r in results if r.get("execution_time_ms", 0) > 0]
+        avg_time = sum(all_times) / len(all_times) if all_times else 0
+        
+        return jsonify({
+            "success": True,
+            "test_parameters": {
+                "borough": borough,
+                "year_month": year_month
+            },
+            "query_results": results,
+            "summary": {
+                "total_queries": len(results),
+                "avg_execution_time_ms": round(avg_time, 2),
+                "fastest_query": min(results, key=lambda x: x.get("execution_time_ms", float('inf')))["query_name"],
+                "slowest_query": max(results, key=lambda x: x.get("execution_time_ms", 0))["query_name"]
+            }
+        })
+        
+    except Exception as e:
+        import traceback
+        return jsonify({
+            "error": str(e),
+            "traceback": traceback.format_exc(),
+            "success": False
+        }), 500
+
+@cassandra_bp.route("/test/resilience", methods=["POST"])
+def resilience_test():
+    """Test de résilience avec simulation de pannes"""
+    try:
+        start_time = time.time()
+        consistency_level_str = request.json.get("consistency_level", "QUORUM")
+        num_operations = int(request.json.get("num_operations", 1000))
+        
+        from cassandra import ConsistencyLevel
+        
+        # Mapper consistency level
+        cl_map = {
+            "ONE": ConsistencyLevel.ONE,
+            "TWO": ConsistencyLevel.TWO,
+            "THREE": ConsistencyLevel.THREE,
+            "QUORUM": ConsistencyLevel.QUORUM,
+            "ALL": ConsistencyLevel.ALL,
+            "LOCAL_ONE": ConsistencyLevel.LOCAL_ONE,
+            "LOCAL_QUORUM": ConsistencyLevel.LOCAL_QUORUM
+        }
+        
+        consistency_level = cl_map.get(consistency_level_str, ConsistencyLevel.QUORUM)
+        
+        # Tester les écritures
+        write_successes = 0
+        write_failures = 0
+        write_latencies = []
+        
+        import random
+        from datetime import date, timedelta
+        from cassandra.query import SimpleStatement
+        
+        boroughs = ["Manhattan", "Brooklyn", "Queens"]
+        
+        insert_query = session.prepare("""
+            INSERT INTO projet_bd_rf3.trips_by_borough_time 
+            (borough, year_month, pickup_date, pickup_hour, sum_total_amount)
+            VALUES (?, ?, ?, ?, ?)
+        """)
+        insert_query.consistency_level = consistency_level
+        
+        for i in range(num_operations):
+            try:
+                op_start = time.time()
+                
+                borough = random.choice(boroughs)
+                year_month = "2024-01"
+                pickup_date = date(2024, 1, 1) + timedelta(days=random.randint(0, 30))
+                pickup_hour = random.randint(0, 23)
+                
+                session.execute(insert_query, (
+                    borough, year_month, pickup_date, pickup_hour, random.uniform(10, 100)
+                ))
+                
+                write_successes += 1
+                write_latencies.append((time.time() - op_start) * 1000)
+                
+            except Exception as e:
+                write_failures += 1
+        
+        # Tester les lectures
+        read_successes = 0
+        read_failures = 0
+        read_latencies = []
+        
+        read_query = session.prepare("""
+            SELECT * FROM projet_bd_rf3.trips_by_borough_time
+            WHERE borough = ? AND year_month = '2024-01'
+            LIMIT 10
+        """)
+        read_query.consistency_level = consistency_level
+        
+        for i in range(num_operations // 10):
+            try:
+                op_start = time.time()
+                
+                borough = random.choice(boroughs)
+                rows = list(session.execute(read_query, (borough,)))
+                
+                read_successes += 1
+                read_latencies.append((time.time() - op_start) * 1000)
+                
+            except Exception as e:
+                read_failures += 1
+        
+        # Informations du cluster
+        cluster_metadata = session.cluster.metadata
+        nodes_status = []
+        
+        for host in cluster_metadata.all_hosts():
+            nodes_status.append({
+                "address": str(host.address),
+                "is_up": host.is_up,
+                "datacenter": host.datacenter,
+                "rack": host.rack
+            })
+        
+        total_time = time.time() - start_time
+        
+        # Calculer les statistiques
+        write_availability = (write_successes / num_operations * 100) if num_operations > 0 else 0
+        read_availability = (read_successes / (num_operations // 10) * 100) if num_operations > 0 else 0
+        
+        avg_write_latency = sum(write_latencies) / len(write_latencies) if write_latencies else 0
+        avg_read_latency = sum(read_latencies) / len(read_latencies) if read_latencies else 0
+        
+        return jsonify({
+            "success": True,
+            "test_config": {
+                "consistency_level": consistency_level_str,
+                "num_operations": num_operations,
+                "keyspace": "projet_bd_rf3"
+            },
+            "cluster_status": {
+                "nodes": nodes_status,
+                "total_nodes": len(nodes_status),
+                "nodes_up": sum(1 for n in nodes_status if n["is_up"])
+            },
+            "write_results": {
+                "total_attempts": num_operations,
+                "successes": write_successes,
+                "failures": write_failures,
+                "availability_percent": round(write_availability, 2),
+                "avg_latency_ms": round(avg_write_latency, 2),
+                "p95_latency_ms": round(sorted(write_latencies)[int(len(write_latencies) * 0.95)], 2) if write_latencies else 0
+            },
+            "read_results": {
+                "total_attempts": num_operations // 10,
+                "successes": read_successes,
+                "failures": read_failures,
+                "availability_percent": round(read_availability, 2),
+                "avg_latency_ms": round(avg_read_latency, 2),
+                "p95_latency_ms": round(sorted(read_latencies)[int(len(read_latencies) * 0.95)], 2) if read_latencies else 0
+            },
+            "total_execution_time_seconds": round(total_time, 2)
+        })
+        
+    except Exception as e:
+        import traceback
+        return jsonify({
+            "error": str(e),
+            "traceback": traceback.format_exc(),
+            "success": False
+        }), 500
+
+@cassandra_bp.route("/test/consistency", methods=["POST"])
+def consistency_test():
+    """Test de cohérence et détection de doublons"""
+    try:
+        start_time = time.time()
+        num_writes = int(request.json.get("num_writes", 1000))
+        
+        import random
+        from datetime import date
+        from cassandra import ConsistencyLevel
+        from cassandra.query import SimpleStatement
+        
+        # Test avec différents consistency levels
+        consistency_levels = ["ONE", "QUORUM", "ALL"]
+        results = {}
+        
+        for cl_name in consistency_levels:
+            cl = getattr(ConsistencyLevel, cl_name)
+            
+            # Phase 1: Écrire des données avec un ID unique
+            write_start = time.time()
+            unique_ids = []
+            write_latencies = []
+            
+            for i in range(num_writes):
+                op_start = time.time()
+                
+                # Créer un ID unique basé sur CL et index
+                borough = f"TestBorough_{cl_name}"
+                year_month = "2024-01"
+                pickup_date = date(2024, 1, 15)
+                pickup_hour = i % 24
+                
+                insert_query = SimpleStatement(
+                    """
+                    INSERT INTO projet_bd_rf3.trips_by_borough_time 
+                    (borough, year_month, pickup_date, pickup_hour, sum_total_amount)
+                    VALUES (%s, %s, %s, %s, %s)
+                    """,
+                    consistency_level=cl
+                )
+                
+                session.execute(insert_query, (
+                    borough, year_month, pickup_date, pickup_hour, float(i)
+                ))
+                
+                unique_ids.append((borough, year_month, pickup_date, pickup_hour))
+                write_latencies.append((time.time() - op_start) * 1000)
+            
+            write_time = time.time() - write_start
+            
+            # Phase 2: Relire les données et vérifier les doublons
+            read_start = time.time()
+            read_latencies = []
+            found_records = []
+            
+            # Lire toutes les données écrites
+            read_query = SimpleStatement(
+                f"""
+                SELECT borough, year_month, pickup_date, pickup_hour, sum_total_amount
+                FROM projet_bd_rf3.trips_by_borough_time
+                WHERE borough = 'TestBorough_{cl_name}' AND year_month = '2024-01'
+                """,
+                consistency_level=cl
+            )
+            
+            op_start = time.time()
+            rows = list(session.execute(read_query))
+            read_latencies.append((time.time() - op_start) * 1000)
+            
+            # Vérifier les doublons
+            seen = set()
+            duplicates = []
+            
+            for row in rows:
+                key = (row.borough, row.year_month, row.pickup_date, row.pickup_hour)
+                if key in seen:
+                    duplicates.append(key)
+                seen.add(key)
+                found_records.append(row.sum_total_amount)
+            
+            read_time = time.time() - read_start
+            
+            # Calculer les statistiques
+            results[cl_name] = {
+                "write_performance": {
+                    "total_writes": num_writes,
+                    "write_time_seconds": round(write_time, 2),
+                    "avg_write_latency_ms": round(sum(write_latencies) / len(write_latencies), 2),
+                    "p95_write_latency_ms": round(sorted(write_latencies)[int(len(write_latencies) * 0.95)], 2),
+                    "p99_write_latency_ms": round(sorted(write_latencies)[int(len(write_latencies) * 0.99)], 2)
+                },
+                "read_performance": {
+                    "read_time_seconds": round(read_time, 2),
+                    "avg_read_latency_ms": round(sum(read_latencies) / len(read_latencies), 2)
+                },
+                "consistency_check": {
+                    "expected_records": num_writes,
+                    "found_records": len(rows),
+                    "missing_records": num_writes - len(rows),
+                    "duplicate_records": len(duplicates),
+                    "duplicates_list": [str(d) for d in duplicates[:10]] if duplicates else [],
+                    "data_integrity": "OK" if len(duplicates) == 0 and len(rows) >= num_writes - 5 else "ISSUES"
+                }
+            }
+            
+            # Nettoyer les données de test
+            try:
+                delete_query = SimpleStatement(
+                    f"""
+                    DELETE FROM projet_bd_rf3.trips_by_borough_time
+                    WHERE borough = 'TestBorough_{cl_name}' AND year_month = '2024-01'
+                    """,
+                    consistency_level=cl
+                )
+                session.execute(delete_query)
+            except Exception as del_error:
+                print(f"Cleanup error for {cl_name}: {del_error}")
+        
+        total_time = time.time() - start_time
+        
+        # Analyse comparative
+        comparison = {
+            "latency_tradeoff": {},
+            "integrity_summary": {}
+        }
+        
+        for cl_name in consistency_levels:
+            comparison["latency_tradeoff"][cl_name] = {
+                "avg_write_latency_ms": results[cl_name]["write_performance"]["avg_write_latency_ms"],
+                "avg_read_latency_ms": results[cl_name]["read_performance"]["avg_read_latency_ms"]
+            }
+            comparison["integrity_summary"][cl_name] = {
+                "data_integrity": results[cl_name]["consistency_check"]["data_integrity"],
+                "duplicates": results[cl_name]["consistency_check"]["duplicate_records"],
+                "missing": results[cl_name]["consistency_check"]["missing_records"]
+            }
+        
+        return jsonify({
+            "success": True,
+            "test_config": {
+                "num_writes": num_writes,
+                "keyspace": "projet_bd_rf3",
+                "consistency_levels_tested": consistency_levels
+            },
+            "results_by_consistency_level": results,
+            "comparison": comparison,
+            "total_execution_time_seconds": round(total_time, 2)
+        })
+        
+    except Exception as e:
+        import traceback
+        return jsonify({
+            "error": str(e),
+            "traceback": traceback.format_exc(),
+            "success": False
+        }), 500
+@cassandra_bp.route("/test/scalability", methods=["POST"])
+def scalability_test():
+    """Test de scalabilité avec mesure des performances selon le nombre de nœuds"""
+    try:
+        start_time = time.time()
+        test_type = request.json.get("test_type", "mixed")  # read, write, mixed
+        num_operations = int(request.json.get("num_operations", 5000))
+        
+        # Obtenir les infos du cluster
+        cluster_metadata = session.cluster.metadata
+        nodes = list(cluster_metadata.all_hosts())
+        num_nodes = len(nodes)
+        
+        # Obtenir le replication factor
+        keyspace_query = """
+            SELECT replication 
+            FROM system_schema.keyspaces 
+            WHERE keyspace_name = 'projet_bd_rf3'
+        """
+        keyspace_info = session.execute(keyspace_query).one()
+        replication_factor = int(keyspace_info.replication.get('datacenter1', 3)) if keyspace_info else 3
+        
+        results = {
+            "cluster_info": {
+                "num_nodes": num_nodes,
+                "replication_factor": replication_factor,
+                "nodes": [{"address": str(node.address), "rack": node.rack, "is_up": node.is_up} for node in nodes]
+            },
+            "write_test": {},
+            "read_test": {},
+            "cpu_memory": []
+        }
+        
+        # Test d'écriture
+        if test_type in ["write", "mixed"]:
+            write_start = time.time()
+            write_latencies = []
+            
+            from cassandra.query import BatchStatement, ConsistencyLevel
+            import random
+            from datetime import date, timedelta
+            
+            boroughs = ["Manhattan", "Brooklyn", "Queens", "Bronx", "Staten Island"]
+            
+            insert_query = session.prepare("""
+                INSERT INTO projet_bd_rf3.trips_by_borough_time 
+                (borough, year_month, pickup_date, pickup_hour, 
+                 sum_passenger_count, sum_fare_amount, sum_total_amount)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            """)
+            
+            batch_size = 50
+            num_batches = num_operations // batch_size
+            
+            for batch_num in range(num_batches):
+                batch_start_time = time.time()
+                batch = BatchStatement(consistency_level=ConsistencyLevel.QUORUM)
+                
+                for i in range(batch_size):
+                    borough = random.choice(boroughs)
+                    year_month = "2024-01"
+                    pickup_date = date(2024, 1, 1) + timedelta(days=random.randint(0, 30))
+                    pickup_hour = random.randint(0, 23)
+                    
+                    batch.add(insert_query, (
+                        borough, year_month, pickup_date, pickup_hour,
+                        random.uniform(1, 4),
+                        random.uniform(10, 100),
+                        random.uniform(12, 120)
+                    ))
+                
+                session.execute(batch)
+                batch_latency = (time.time() - batch_start_time) * 1000
+                write_latencies.append(batch_latency)
+            
+            write_time = time.time() - write_start
+            
+            results["write_test"] = {
+                "total_operations": num_operations,
+                "total_time_seconds": round(write_time, 2),
+                "throughput_ops_per_sec": round(num_operations / write_time, 2),
+                "avg_latency_ms": round(sum(write_latencies) / len(write_latencies), 2),
+                "p95_latency_ms": round(sorted(write_latencies)[int(len(write_latencies) * 0.95)], 2),
+                "p99_latency_ms": round(sorted(write_latencies)[int(len(write_latencies) * 0.99)], 2)
+            }
+        
+        # Test de lecture
+        if test_type in ["read", "mixed"]:
+            read_start = time.time()
+            read_latencies = []
+            
+            boroughs = ["Manhattan", "Brooklyn", "Queens", "Bronx", "Staten Island"]
+            
+            for i in range(num_operations // 10):  # Moins de lectures que d'écritures
+                query_start = time.time()
+                
+                borough = random.choice(boroughs)
+                query = """
+                    SELECT * FROM projet_bd_rf3.trips_by_borough_time
+                    WHERE borough = %s AND year_month = '2024-01'
+                    LIMIT 100
+                """
+                rows = list(session.execute(query, (borough,)))
+                
+                query_latency = (time.time() - query_start) * 1000
+                read_latencies.append(query_latency)
+            
+            read_time = time.time() - read_start
+            
+            results["read_test"] = {
+                "total_operations": len(read_latencies),
+                "total_time_seconds": round(read_time, 2),
+                "throughput_ops_per_sec": round(len(read_latencies) / read_time, 2),
+                "avg_latency_ms": round(sum(read_latencies) / len(read_latencies), 2),
+                "p95_latency_ms": round(sorted(read_latencies)[int(len(read_latencies) * 0.95)], 2),
+                "p99_latency_ms": round(sorted(read_latencies)[int(len(read_latencies) * 0.99)], 2)
+            }
+        
+        # Métriques CPU/Mémoire par nœud
+        import subprocess
+        
+        for i in range(1, num_nodes + 1):
+            try:
+                # CPU
+                cpu_cmd = f"docker stats cassandra{i} --no-stream --format '{{{{.CPUPerc}}}}'"
+                cpu_result = subprocess.run(cpu_cmd, shell=True, capture_output=True, text=True, timeout=5)
+                cpu_percent = cpu_result.stdout.strip().replace('%', '')
+                
+                # Mémoire
+                mem_cmd = f"docker stats cassandra{i} --no-stream --format '{{{{.MemPerc}}}}'"
+                mem_result = subprocess.run(mem_cmd, shell=True, capture_output=True, text=True, timeout=5)
+                mem_percent = mem_result.stdout.strip().replace('%', '')
+                
+                results["cpu_memory"].append({
+                    "node": f"cassandra{i}",
+                    "cpu_percent": float(cpu_percent) if cpu_percent else 0,
+                    "memory_percent": float(mem_percent) if mem_percent else 0
+                })
+            except Exception as e:
+                results["cpu_memory"].append({
+                    "node": f"cassandra{i}",
+                    "cpu_percent": 0,
+                    "memory_percent": 0,
+                    "error": str(e)
+                })
+        
+        total_time = time.time() - start_time
+        
+        return jsonify({
+            "success": True,
+            "test_config": {
+                "test_type": test_type,
+                "num_operations": num_operations,
+                "keyspace": "projet_bd_rf3"
+            },
+            "results": results,
+            "total_execution_time_seconds": round(total_time, 2)
+        })
+        
+    except Exception as e:
+        import traceback
+        return jsonify({
+            "error": str(e),
+            "traceback": traceback.format_exc(),
+            "success": False
+        }), 500

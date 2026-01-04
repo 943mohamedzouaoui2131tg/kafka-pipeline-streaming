@@ -5,6 +5,7 @@ from kafka.errors import KafkaError
 from dotenv import load_dotenv
 from kafka import KafkaProducer
 import json
+import time
 
 load_dotenv()
 KAFKA_BROKER_ADDRESS1 = os.getenv("KAFKA_BROKER1")
@@ -85,7 +86,7 @@ async def main():
                     for idx, item in enumerate(data_array):
                         stats["total_records"] += 1
                         data = item
-                        
+                        data["producer_timestamp"] = time.time() * 1000  
                         # Validate record
                         is_valid, error_msg = validate_record(data)
                         

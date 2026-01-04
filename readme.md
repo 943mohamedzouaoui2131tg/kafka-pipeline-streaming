@@ -66,6 +66,12 @@
 │   ├── docker-compose.yml
 │   │   # Fichier Docker Compose pour configurer les serveurs MongoDB
 │   └── mongo-up.sh
+│   └── mongo-down.sh # cleanup des shards
+├── mongo-compose-6-shards
+│   ├── docker-compose.yml
+│   │   # Fichier Docker Compose pour configurer les serveurs MongoDB
+│   └── mongo-up-6-shards.sh # création de base mongo en structure 6 shards
+│   └── mongo-cleanup-6shards.sh # cleanup de base mongo en structure 6 shards
 │
 ├── mongo_consumer
 │   ├── .dockerignore
@@ -75,6 +81,12 @@
 │   └── src
 │       └── consumer.py
 │           # Script Python pour lancer le consumer MongoDB
+├── Web_App
+│   ├── .. # structure de l'application (pour détails coir Web_app\readme.md)
+│   ├── readme.md
+│   ├── Dockerfile
+│   └── requirements.txt
+│   
 │
 └── Producer
     # Fichiers du producteur

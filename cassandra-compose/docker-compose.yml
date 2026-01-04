@@ -86,6 +86,93 @@ services:
             start_period: 90s
         restart: unless-stopped
 
+    cassandra4:
+        image: cassandra:3.0
+        container_name: cassandra4
+        hostname: cassandra4
+        ports:
+            - "9045:9042"
+        environment:
+            - CASSANDRA_CLUSTER_NAME=ProjetCluster
+            - CASSANDRA_DC=datacenter1
+            - CASSANDRA_RACK=rack2
+            - CASSANDRA_ENDPOINT_SNITCH=GossipingPropertyFileSnitch
+            - CASSANDRA_SEEDS=cassandra1
+            - MAX_HEAP_SIZE=512M
+            - HEAP_NEWSIZE=100M
+        volumes:
+            - cassandra4_data:/var/lib/cassandra
+        networks:
+            - cassandra-network
+        depends_on:
+            cassandra3:
+                condition: service_healthy
+        healthcheck:
+            test: ["CMD-SHELL", "cqlsh -e 'describe cluster' || exit 1"]
+            interval: 30s
+            timeout: 10s
+            retries: 10
+            start_period: 90s
+        restart: unless-stopped
+
+    cassandra5:
+        image: cassandra:3.0
+        container_name: cassandra5
+        hostname: cassandra5
+        ports:
+            - "9046:9042"
+        environment:
+            - CASSANDRA_CLUSTER_NAME=ProjetCluster
+            - CASSANDRA_DC=datacenter1
+            - CASSANDRA_RACK=rack2
+            - CASSANDRA_ENDPOINT_SNITCH=GossipingPropertyFileSnitch
+            - CASSANDRA_SEEDS=cassandra1
+            - MAX_HEAP_SIZE=512M
+            - HEAP_NEWSIZE=100M
+        volumes:
+            - cassandra5_data:/var/lib/cassandra
+        networks:
+            - cassandra-network
+        depends_on:
+            cassandra4:
+                condition: service_healthy
+        healthcheck:
+            test: ["CMD-SHELL", "cqlsh -e 'describe cluster' || exit 1"]
+            interval: 30s
+            timeout: 10s
+            retries: 10
+            start_period: 90s
+        restart: unless-stopped
+
+    cassandra6:
+        image: cassandra:3.0
+        container_name: cassandra6
+        hostname: cassandra6
+        ports:
+            - "9047:9042"
+        environment:
+            - CASSANDRA_CLUSTER_NAME=ProjetCluster
+            - CASSANDRA_DC=datacenter1
+            - CASSANDRA_RACK=rack2
+            - CASSANDRA_ENDPOINT_SNITCH=GossipingPropertyFileSnitch
+            - CASSANDRA_SEEDS=cassandra1
+            - MAX_HEAP_SIZE=512M
+            - HEAP_NEWSIZE=100M
+        volumes:
+            - cassandra6_data:/var/lib/cassandra
+        networks:
+            - cassandra-network
+        depends_on:
+            cassandra5:
+                condition: service_healthy
+        healthcheck:
+            test: ["CMD-SHELL", "cqlsh -e 'describe cluster' || exit 1"]
+            interval: 30s
+            timeout: 10s
+            retries: 10
+            start_period: 90s
+        restart: unless-stopped
+
 networks:
     cassandra-network:
         driver: bridge
@@ -94,3 +181,6 @@ volumes:
     cassandra1_data:
     cassandra2_data:
     cassandra3_data:
+    cassandra4_data:
+    cassandra5_data:
+    cassandra6_data:

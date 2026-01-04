@@ -1,4 +1,11 @@
-// dashboard-part3.js - Cassandra Charts, Comparisons and Initialization
+// dashboard-part3.js - Cassandra Charts, Comparisons and Scalability
+
+// API Base URLs
+const MONGO_URL = 'http://localhost:5000/mongo';
+const CASSANDRA_URL = 'http://localhost:5000/cassandra';
+
+// Global variable for scalability chart
+let scalabilityChart = null;
 
 // ============================================================================
 // CASSANDRA CHARTS
@@ -261,7 +268,7 @@ function updateComparisonStats() {
 }
 
 // ============================================================================
-// CLUSTER INFORMATION - ENHANCED
+// CLUSTER INFORMATION
 // ============================================================================
 
 async function getMongoShardInfo() {
@@ -282,7 +289,6 @@ async function getMongoShardInfo() {
         const totalDocs = result.totalDocuments || 0;
         const totalSize = result.totalDataSize || 0;
         
-        // Display summary first
         let html = `
             <div class="shard-card" style="grid-column: 1 / -1; border-color: #667eea;">
                 <h4>📊 Cluster Summary</h4>
@@ -295,7 +301,6 @@ async function getMongoShardInfo() {
             </div>
         `;
         
-        // Display individual shards
         html += shards.map(shard => {
             const docPercentage = totalDocs > 0 ? (shard.documents / totalDocs * 100) : 0;
             const sizePercentage = totalSize > 0 ? (shard.dataSize / totalSize * 100) : 0;
@@ -321,16 +326,6 @@ async function getMongoShardInfo() {
                         </div>
                         <small>${docPercentage.toFixed(1)}% of total documents</small>
                     </div>
-                    
-                    <div style="margin-top: 10px;">
-                        <small>Size Distribution:</small>
-                        <div class="progress-bar">
-                            <div class="progress-fill" style="width: ${sizePercentage.toFixed(1)}%; background: linear-gradient(90deg, #13aa52 0%, #0f7c3d 100%);"></div>
-                        </div>
-                        <small>${sizePercentage.toFixed(1)}% of total size</small>
-                    </div>
-                    
-                    ${shard.error ? `<p style="color: #dc3545; margin-top: 10px;"><small>Error: ${shard.error}</small></p>` : ''}
                 </div>
             `;
         }).join('');
@@ -361,7 +356,6 @@ async function getCassandraClusterInfo() {
         const keyspaces = result.keyspaces || [];
         const nodes = cluster.nodes || [];
         
-        // Display cluster overview
         let html = `
             <div class="db-card" style="margin-bottom: 20px;">
                 <h4>📊 Cluster Overview</h4>
@@ -373,7 +367,6 @@ async function getCassandraClusterInfo() {
             </div>
         `;
         
-        // Display nodes information
         if (nodes.length > 0) {
             html += `
                 <div class="db-card" style="margin-bottom: 20px;">
@@ -384,7 +377,7 @@ async function getCassandraClusterInfo() {
                                 <h5>Node: ${node.address}</h5>
                                 <p><strong>Status:</strong> 
                                     <span class="status-indicator ${node.is_up ? 'active' : 'inactive'}"></span>
-                                    ${node.status === 'connected' || node.is_up ? '✅ Connected' : '❌ Disconnected'}
+                                    ${node.is_up ? '✅ Connected' : '❌ Disconnected'}
                                 </p>
                                 <p><strong>Datacenter:</strong> ${node.datacenter}</p>
                                 <p><strong>Rack:</strong> ${node.rack}</p>
@@ -395,7 +388,6 @@ async function getCassandraClusterInfo() {
             `;
         }
         
-        // Display keyspaces with their tables
         html += `<h4 style="margin-top: 20px;">📚 Keyspaces & Replication Factors</h4>`;
         
         keyspaces.forEach(ks => {
@@ -407,7 +399,6 @@ async function getCassandraClusterInfo() {
                     <p><strong>Replication Strategy:</strong> ${ks.replicationStrategy}</p>
                     <p><strong>Tables:</strong> ${ks.tableCount}</p>
                     <p><strong>Total Rows:</strong> ${ks.totalRows.toLocaleString()}</p>
-                    <p><strong>Total Replicas:</strong> ${ks.replicas}</p>
                     
                     <div style="margin-top: 15px;">
                         <h5>Tables:</h5>
@@ -440,82 +431,291 @@ async function getCassandraClusterInfo() {
     }
 }
 
-// Keyspace details helper function
-async function getCassandraKeyspaceDetails(keyspaceName) {
-    try {
-        const response = await fetch(`/cassandra/cluster/keyspace-details?keyspace=${keyspaceName}`);
-        const result = await response.json();
-        
-        if (!result.success || result.error) {
-            throw new Error(result.error || 'Failed to fetch keyspace details');
-        }
-        
-        return result;
-    } catch (error) {
-        console.error('Error fetching keyspace details:', error);
-        return null;
+// ============================================================================
+// SCALABILITY TESTING
+// ============================================================================
+
+// Show/hide load level control based on test type
+document.getElementById('scalabilityTestType')?.addEventListener('change', function() {
+    const loadLevelGroup = document.getElementById('loadLevelGroup');
+    if (this.value === 'load') {
+        loadLevelGroup.style.display = 'block';
+    } else {
+        loadLevelGroup.style.display = 'none';
     }
-}
-
-// ============================================================================
-// HELPER FUNCTIONS
-// ============================================================================
-
-function formatBytes(bytes) {
-    if (bytes === 0) return '0 Bytes';
-    const k = 1024;
-    const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
-}
-
-function getAnomalyType(trip) {
-    if (trip.trip_distance === 0) return 'Zero distance';
-    if (trip.duration_minutes && trip.duration_minutes <= 0) return 'Invalid duration';
-    if (trip.total_amount <= 0) return 'Invalid amount';
-    if (trip.duration_minutes && trip.trip_distance) {
-        const speed = trip.trip_distance / (trip.duration_minutes / 60);
-        if (speed > 100) return 'High speed';
-    }
-    return 'Other';
-}
-
-function capitalize(str) {
-    if (!str) return '';
-    return str.charAt(0).toUpperCase() + str.slice(1);
-}
-
-// ============================================================================
-// INITIALIZATION
-// ============================================================================
-
-document.addEventListener('DOMContentLoaded', function() {
-    console.log('📊 Dashboard loaded and initializing...');
-    
-    // Initialize empty charts once
-    updateThroughputChart();
-    updateRevenueOverTimeChart();
-    
-    // Initialize status displays
-    updateSystemStatus();
-    
-    // Request initial stats from server
-    socket.emit('request_stats');
-    
-    // Refresh system status every 2 seconds (but NOT charts - they update on new_trip event)
-    setInterval(() => {
-        updateSystemStatus();
-    }, 2000);
-    
-    console.log('✅ Dashboard initialized successfully');
 });
 
-// Debug function
-window.debugDashboard = function() {
-    console.log('=== Dashboard Debug Info ===');
-    console.log('Socket connected:', socket.connected);
-    console.log('Streaming metrics:', streamingMetrics);
-    console.log('Charts:', Object.keys(charts).filter(k => charts[k] !== null));
-    console.log('Performance data:', performanceData);
-    console.log('===========================');
-};
+async function runScalabilityTest() {
+    const testType = document.getElementById('scalabilityTestType').value;
+    const database = document.getElementById('scalabilityDatabase').value;
+    const resultsDiv = document.getElementById('scalabilityResults');
+    
+    resultsDiv.innerHTML = '<div class="loading">🔄 Running scalability tests...</div>';
+    
+    try {
+        let results = {};
+        
+        if (database === 'both' || database === 'mongo') {
+            try {
+                results.mongo = await runDatabaseTest('mongo', testType);
+            } catch (error) {
+                console.error('MongoDB test failed:', error);
+                results.mongo = { error: error.message, database: 'mongo' };
+            }
+        }
+        
+        if (database === 'both' || database === 'cassandra') {
+            try {
+                results.cassandra = await runDatabaseTest('cassandra', testType);
+            } catch (error) {
+                console.error('Cassandra test failed:', error);
+                results.cassandra = { error: error.message, database: 'cassandra' };
+            }
+        }
+        
+        const hasResults = Object.values(results).some(r => !r.error);
+        
+        if (!hasResults) {
+            resultsDiv.innerHTML = `
+                <div class="error">
+                    ❌ All tests failed. Please check:
+                    <ul>
+                        <li>Flask server is running on http://localhost:5000</li>
+                        <li>Endpoints are accessible</li>
+                        <li>Check browser console (F12) for details</li>
+                    </ul>
+                </div>
+            `;
+            return;
+        }
+        
+        displayScalabilityResults(results, testType);
+        
+    } catch (error) {
+        resultsDiv.innerHTML = `<div class="error">❌ Error: ${error.message}</div>`;
+        console.error('Scalability test error:', error);
+    }
+}
+
+async function runDatabaseTest(dbType, testType) {
+    const baseUrl = dbType === 'mongo' ? MONGO_URL : CASSANDRA_URL;
+    
+    console.log(`🧪 Testing ${dbType} - ${testType}`);
+    
+    switch (testType) {
+        case 'nodes':
+            return await runNodeScalingTest(baseUrl, dbType);
+        case 'load':
+            return await runLoadTest(baseUrl, dbType);
+        case 'batch':
+            return await runBatchStreamingTest(baseUrl, dbType);
+        default:
+            throw new Error('Unknown test type');
+    }
+}
+
+async function runNodeScalingTest(baseUrl, dbType) {
+    const testTypes = ['read', 'write', 'aggregate'];
+    const results = [];
+    
+    for (const type of testTypes) {
+        try {
+            const url = `${baseUrl}/scalability/node-scaling?test_type=${type}`;
+            console.log(`Fetching: ${url}`);
+            
+            const response = await fetch(url);
+            
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+            
+            const contentType = response.headers.get('content-type');
+            if (!contentType || !contentType.includes('application/json')) {
+                const text = await response.text();
+                console.error('Non-JSON response:', text.substring(0, 200));
+                throw new Error('Server returned HTML instead of JSON');
+            }
+            
+            const data = await response.json();
+            console.log(`${dbType} ${type} test result:`, data);
+            
+            if (data.success) {
+                results.push({
+                    testType: type,
+                    ...data.data,
+                    hosts: data.hosts || data.shards || []
+                });
+            }
+        } catch (error) {
+            console.error(`Error testing ${type}:`, error);
+            results.push({
+                testType: type,
+                error: error.message,
+                execution_time_ms: 0,
+                throughput: 0,
+                cpu_percent: 0,
+                memory_percent: 0
+            });
+        }
+    }
+    
+    if (results.length === 0) {
+        throw new Error(`No tests completed for ${dbType}`);
+    }
+    
+    return {
+        testName: 'Node Scaling',
+        database: dbType,
+        results: results
+    };
+}
+
+async function runLoadTest(baseUrl, dbType) {
+    const loadLevel = document.getElementById('loadLevel').value;
+    
+    const url = `${baseUrl}/scalability/load-testing?load=${loadLevel}`;
+    const response = await fetch(url);
+    const data = await response.json();
+    
+    if (!data.success) {
+        throw new Error(data.error || 'Load test failed');
+    }
+    
+    return {
+        testName: 'Load Testing',
+        database: dbType,
+        loadLevel: parseInt(loadLevel),
+        results: [data.data]
+    };
+}
+
+async function runBatchStreamingTest(baseUrl, dbType) {
+    if (dbType !== 'mongo') {
+        return {
+            testName: 'Batch vs Streaming',
+            database: dbType,
+            results: [],
+            note: 'This test is only available for MongoDB'
+        };
+    }
+    
+    const url = `${baseUrl}/scalability/batch-vs-streaming?records=1000`;
+    const response = await fetch(url);
+    const data = await response.json();
+    
+    if (!data.success) {
+        throw new Error(data.error || 'Batch/streaming test failed');
+    }
+    
+    return {
+        testName: 'Batch vs Streaming',
+        database: dbType,
+        results: [data.data]
+    };
+}
+
+function displayScalabilityResults(results, testType) {
+    const resultsDiv = document.getElementById('scalabilityResults');
+    let html = '<div class="results-container">';
+    
+    for (const [dbType, data] of Object.entries(results)) {
+        const dbIcon = dbType === 'mongo' ? '🍃' : '💎';
+        const dbName = dbType === 'mongo' ? 'MongoDB' : 'Cassandra';
+        
+        html += `<div class="db-results">`;
+        html += `<h4>${dbIcon} ${dbName}</h4>`;
+        
+        if (data.error) {
+            html += `<div class="error-message">❌ ${data.error}</div>`;
+        } else {
+            html += formatTestResults(data, testType);
+        }
+        
+        html += `</div>`;
+    }
+    
+    html += '</div>';
+    resultsDiv.innerHTML = html;
+    
+    const hasValidResults = Object.values(results).some(r => !r.error && r.results && r.results.length > 0);
+    if (hasValidResults) {
+        updateScalabilityChart(results, testType);
+    }
+}
+
+function formatTestResults(data, testType) {
+    if (data.note) {
+        return `<p class="note">ℹ️ ${data.note}</p>`;
+    }
+    
+    let html = '<div class="metrics-grid">';
+    
+    data.results.forEach(result => {
+        const hasError = result.error;
+        const statusIcon = hasError ? '❌' : '✅';
+        
+        html += `
+            <div class="metric-card ${hasError ? 'error-card' : ''}">
+                <div class="metric-label">${statusIcon} ${result.testType ? result.testType.toUpperCase() : 'Test'}</div>
+                ${hasError ? 
+                    `<div class="metric-error">${result.error}</div>` :
+                    `
+                    <div class="metric-value">${result.execution_time_ms?.toFixed(2) || 0} ms</div>
+                    <div class="metric-details">
+                        <div>Throughput: ${result.throughput?.toFixed(2) || 0} ops/s</div>
+                        <div>CPU: ${result.cpu_percent?.toFixed(1) || 0}%</div>
+                        <div>Memory: ${result.memory_percent?.toFixed(1) || 0}%</div>
+                    </div>
+                    `
+                }
+            </div>
+        `;
+    });
+    
+    html += '</div>';
+    return html;
+}
+
+function updateScalabilityChart(results, testType) {
+    const ctx = document.getElementById('scalabilityChart');
+    if (!ctx) return;
+    
+    if (scalabilityChart) {
+        scalabilityChart.destroy();
+    }
+    
+    const labels = ['Read', 'Write', 'Aggregate'];
+    const datasets = [];
+    
+    for (const [dbType, data] of Object.entries(results)) {
+        if (data.error || !data.results) continue;
+        
+        const color = dbType === 'mongo' ? 'rgba(76, 175, 80, 0.8)' : 'rgba(33, 150, 243, 0.8)';
+        const execTimes = data.results.map(r => r.error ? 0 : r.execution_time_ms);
+        
+        datasets.push({
+            label: dbType === 'mongo' ? 'MongoDB' : 'Cassandra',
+            data: execTimes,
+            backgroundColor: color,
+            borderColor: color,
+            borderWidth: 1
+        });
+    }
+    
+    scalabilityChart = new Chart(ctx.getContext('2d'), {
+        type: 'bar',
+        data: { labels, datasets },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    title: { display: true, text: 'Time (ms)' }
+                }
+            }
+        }
+    });
+}
+
+console.log('✅ Dashboard Part 3 initialized successfully');

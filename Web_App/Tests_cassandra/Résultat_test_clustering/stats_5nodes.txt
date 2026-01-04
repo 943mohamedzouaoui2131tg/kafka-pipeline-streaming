@@ -1,0 +1,39 @@
+Keyspace: projet_bd_rf3
+	Read Count: 427
+	Read Latency: 3.0852084309133487 ms.
+	Write Count: 6370
+	Write Latency: 0.17398477237048668 ms.
+	Pending Flushes: 0
+		Table: trips_by_borough_time
+		SSTable count: 3
+		Space used (live): 182052
+		Space used (total): 182052
+		Space used by snapshots (total): 0
+		Off heap memory used (total): 213
+		SSTable Compression Ratio: 0.5343848806904549
+		Number of partitions (estimate): 12
+		Memtable cell count: 5021
+		Memtable data size: 203339
+		Memtable off heap memory used: 0
+		Memtable switch count: 16
+		Speculate retries: 177
+		Local read count: 427
+		Local read latency: 1.843 ms
+		Local write count: 6370
+		Local write latency: 0.170 ms
+		Pending flushes: 0
+		Bloom filter false positives: 0
+		Bloom filter false ratio: 0.00000
+		Bloom filter space used: 64
+		Bloom filter off heap memory used: 40
+		Index summary off heap memory used: 109
+		Compression metadata off heap memory used: 64
+		Compacted partition minimum bytes: 43
+		Compacted partition maximum bytes: 61214
+		Compacted partition mean bytes: 17796
+		Average live cells per slice (last five minutes): 103.0
+		Maximum live cells per slice (last five minutes): 103
+		Average tombstones per slice (last five minutes): 1.0
+		Maximum tombstones per slice (last five minutes): 1
+
+----------------

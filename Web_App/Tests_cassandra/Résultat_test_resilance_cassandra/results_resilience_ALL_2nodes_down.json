@@ -1,0 +1,49 @@
+{
+    "cluster_status": {
+        "nodes": [
+            {
+                "address": "127.0.0.1",
+                "datacenter": "datacenter1",
+                "is_up": true,
+                "rack": "rack1"
+            },
+            {
+                "address": "172.21.0.4",
+                "datacenter": "datacenter1",
+                "is_up": false,
+                "rack": "rack1"
+            },
+            {
+                "address": "172.21.0.3",
+                "datacenter": "datacenter1",
+                "is_up": false,
+                "rack": "rack1"
+            }
+        ],
+        "nodes_up": 1,
+        "total_nodes": 3
+    },
+    "read_results": {
+        "availability_percent": 0,
+        "avg_latency_ms": 0,
+        "failures": 100,
+        "p95_latency_ms": 0,
+        "successes": 0,
+        "total_attempts": 100
+    },
+    "success": true,
+    "test_config": {
+        "consistency_level": "ALL",
+        "keyspace": "projet_bd_rf3",
+        "num_operations": 1000
+    },
+    "total_execution_time_seconds": 17.59,
+    "write_results": {
+        "availability_percent": 0,
+        "avg_latency_ms": 0,
+        "failures": 1000,
+        "p95_latency_ms": 0,
+        "successes": 0,
+        "total_attempts": 1000
+    }
+}

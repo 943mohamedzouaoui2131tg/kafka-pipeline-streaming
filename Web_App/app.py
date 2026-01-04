@@ -46,6 +46,8 @@ streaming_stats = {
 
 # Thread lock for stats
 stats_lock = threading.Lock()
+latency_values = deque(maxlen=5000)  # conserver les 5000 dernières latences
+
 
 # Track trips for rate calculation
 trip_timestamps = deque(maxlen=1000)
@@ -63,7 +65,7 @@ def calculate_trips_per_minute():
 def kafka_consumer_thread():
     """Optimized Kafka consumer thread"""
     global streaming_stats, trip_timestamps, consumer_running
-    
+
     print(f"🎧 Starting Kafka consumer for topic: {KAFKA_TOPIC}")
     print(f"📡 Connecting to brokers: {KAFKA_BROKER1}, {KAFKA_BROKER2}")
     
@@ -122,6 +124,15 @@ def kafka_consumer_thread():
                         for message in messages:
                             try:
                                 trip_data = message.value
+                                 # === LATENCY MEASUREMENT ===
+                                consumer_timestamp = time.time() * 1000  # ms
+                                producer_timestamp = trip_data.get("producer_timestamp")
+
+                                if producer_timestamp:
+                                    latency_ms = consumer_timestamp - producer_timestamp
+                                    with stats_lock:
+                                        latency_values.append(latency_ms)
+
                                 trip_count += 1
                                 
                                 # Quick revenue calculation
@@ -231,16 +242,33 @@ def kafka_consumer_thread():
 def emit_current_stats():
     """Emit current stats to all connected clients"""
     with stats_lock:
+        if latency_values:
+            avg_latency = sum(latency_values) / len(latency_values)
+            max_latency = max(latency_values)
+        else:
+            avg_latency = 0
+            max_latency = 0
+
         stats_copy = {
             "total_trips": streaming_stats["total_trips"],
             "mongo_inserts": streaming_stats["mongo_inserts"],
             "cassandra_inserts": streaming_stats["cassandra_inserts"],
             "trips_per_minute": streaming_stats["trips_per_minute"],
             "total_revenue": round(streaming_stats["total_revenue"], 2),
+            "avg_latency_ms": round(avg_latency, 2),
+            "max_latency_ms": round(max_latency, 2),
             "recent_trips": list(streaming_stats["recent_trips"])[:10]
         }
-    
     socketio.emit('new_trip', {"stats": stats_copy})
+
+@app.route("/api/latency")
+def get_latency():
+    with stats_lock:
+        return jsonify({
+            "latencies": list(latency_values),
+            "average_latency_ms": round(sum(latency_values) / len(latency_values), 2) if latency_values else 0,
+            "count": len(latency_values)
+        })
 
 @app.route("/")
 def index():

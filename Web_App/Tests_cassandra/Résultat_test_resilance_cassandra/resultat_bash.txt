@@ -1,0 +1,220 @@
+
+
+==========================================
+TEST DE RÉSILIENCE ET TOLÉRANCE AUX FAUTES
+==========================================
+
+═══════════════════════════════════════
+PHASE 1: CLUSTER NORMAL (tous nœuds UP)
+═══════════════════════════════════════
+Datacenter: DC1
+===============
+Status=Up/Down
+|/ State=Normal/Leaving/Joining/Moving
+--  Address     Load       Tokens       Owns    Host ID                               Rack
+DN  172.21.0.4  ?          256          ?       6894bc26-d576-42b0-a816-7d1675d27a04  r1
+DN  172.21.0.3  ?          256          ?       e0278f2a-95eb-4f7e-8864-5d7f602ce906  r1
+Datacenter: datacenter1
+=======================
+Status=Up/Down
+|/ State=Normal/Leaving/Joining/Moving
+--  Address     Load       Tokens       Owns    Host ID                               Rack
+UN  172.18.0.2  6.79 MB    256          ?       056cd0b3-c73c-4d8d-900b-f3a5960d11e0  rack1
+
+Note: Non-system keyspaces don't have the same replication settings, effective ownership information is meaningless
+
+▶ Test avec Consistency Level: ONE
+  Scénario: all_up
+----------------------------------------
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+100   782  100   730  100    52     40      2  0:00:26  0:00:17  0:00:09   169
+
+
+
+▶ Test avec Consistency Level: QUORUM
+  Scénario: all_up
+----------------------------------------
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+100   768  100   713  100    55     34      2  0:00:27  0:00:20  0:00:07   220
+
+
+
+▶ Test avec Consistency Level: ALL
+  Scénario: all_up
+----------------------------------------
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+100   762  100   710  100    52     35      2  0:00:26  0:00:19  0:00:07   209
+
+
+═══════════════════════════════════════
+PHASE 2: PANNE D'1 NŒUD (cassandra3 DOWN)
+═══════════════════════════════════════
+Arrêt de cassandra3...
+cassandra3
+Attente de détection de la panne (30 sec)...
+Datacenter: DC1
+===============
+Status=Up/Down
+|/ State=Normal/Leaving/Joining/Moving
+--  Address     Load       Tokens       Owns    Host ID                               Rack
+DN  172.21.0.4  ?          256          ?       6894bc26-d576-42b0-a816-7d1675d27a04  r1
+DN  172.21.0.3  ?          256          ?       e0278f2a-95eb-4f7e-8864-5d7f602ce906  r1
+Datacenter: datacenter1
+=======================
+Status=Up/Down
+|/ State=Normal/Leaving/Joining/Moving
+--  Address     Load       Tokens       Owns    Host ID                               Rack
+UN  172.18.0.2  6.79 MB    256          ?       056cd0b3-c73c-4d8d-900b-f3a5960d11e0  rack1
+
+Note: Non-system keyspaces don't have the same replication settings, effective ownership information is meaningless
+
+▶ Test avec Consistency Level: ONE
+  Scénario: 1node_down
+----------------------------------------
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+100   783  100   731  100    52     41      2  0:00:26  0:00:17  0:00:09   182
+
+
+
+▶ Test avec Consistency Level: QUORUM
+  Scénario: 1node_down
+----------------------------------------
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+100   769  100   714  100    55     40      3  0:00:18  0:00:17  0:00:01   177
+
+
+
+▶ Test avec Consistency Level: ALL
+  Scénario: 1node_down
+----------------------------------------
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+100   763  100   711  100    52     40      2  0:00:26  0:00:17  0:00:09   178
+
+
+
+═══════════════════════════════════════
+PHASE 3: PANNE DE 2 NŒUDS (cassandra2&3 DOWN)
+═══════════════════════════════════════
+Arrêt de cassandra2...
+cassandra2
+Attente de détection (30 sec)...
+Datacenter: DC1
+===============
+Status=Up/Down
+|/ State=Normal/Leaving/Joining/Moving
+--  Address     Load       Tokens       Owns    Host ID                               Rack
+DN  172.21.0.4  ?          256          ?       6894bc26-d576-42b0-a816-7d1675d27a04  r1
+DN  172.21.0.3  ?          256          ?       e0278f2a-95eb-4f7e-8864-5d7f602ce906  r1
+Datacenter: datacenter1
+=======================
+Status=Up/Down
+|/ State=Normal/Leaving/Joining/Moving
+--  Address     Load       Tokens       Owns    Host ID                               Rack
+UN  172.18.0.2  6.79 MB    256          ?       056cd0b3-c73c-4d8d-900b-f3a5960d11e0  rack1
+
+Note: Non-system keyspaces don't have the same replication settings, effective ownership information is meaningless
+
+▶ Test avec Consistency Level: ONE
+  Scénario: 2nodes_down
+----------------------------------------
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+100   783  100   731  100    52     41      2  0:00:26  0:00:17  0:00:09   179
+
+
+
+▶ Test avec Consistency Level: QUORUM
+  Scénario: 2nodes_down
+----------------------------------------
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+100   769  100   714  100    55     40      3  0:00:18  0:00:17  0:00:01   179
+
+
+
+▶ Test avec Consistency Level: ALL
+  Scénario: 2nodes_down
+----------------------------------------
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+100   763  100   711  100    52     40      2  0:00:26  0:00:17  0:00:09   169
+
+
+
+═══════════════════════════════════════
+PHASE 4: RESTAURATION PROGRESSIVE
+═══════════════════════════════════════
+Redémarrage de cassandra2...
+cassandra2
+Datacenter: DC1
+===============
+Status=Up/Down
+|/ State=Normal/Leaving/Joining/Moving
+--  Address     Load       Tokens       Owns    Host ID                               Rack
+DN  172.21.0.4  ?          256          ?       6894bc26-d576-42b0-a816-7d1675d27a04  r1
+DN  172.21.0.3  ?          256          ?       e0278f2a-95eb-4f7e-8864-5d7f602ce906  r1
+Datacenter: datacenter1
+=======================
+Status=Up/Down
+|/ State=Normal/Leaving/Joining/Moving
+--  Address     Load       Tokens       Owns    Host ID                               Rack
+UN  172.18.0.2  6.79 MB    256          ?       056cd0b3-c73c-4d8d-900b-f3a5960d11e0  rack1
+
+Note: Non-system keyspaces don't have the same replication settings, effective ownership information is meaningless
+
+▶ Test avec Consistency Level: QUORUM
+  Scénario: recovery_1node
+----------------------------------------
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+100   769  100   714  100    55     40      3  0:00:18  0:00:17  0:00:01   177
+
+
+
+Redémarrage de cassandra3...
+cassandra3
+Datacenter: DC1
+===============
+Status=Up/Down
+|/ State=Normal/Leaving/Joining/Moving
+--  Address     Load       Tokens       Owns    Host ID                               Rack
+DN  172.21.0.4  ?          256          ?       6894bc26-d576-42b0-a816-7d1675d27a04  r1
+DN  172.21.0.3  ?          256          ?       e0278f2a-95eb-4f7e-8864-5d7f602ce906  r1
+Datacenter: datacenter1
+=======================
+Status=Up/Down
+|/ State=Normal/Leaving/Joining/Moving
+--  Address     Load       Tokens       Owns    Host ID                               Rack
+UN  172.18.0.2  6.79 MB    256          ?       056cd0b3-c73c-4d8d-900b-f3a5960d11e0  rack1
+
+Note: Non-system keyspaces don't have the same replication settings, effective ownership information is meaningless
+
+▶ Test avec Consistency Level: QUORUM
+  Scénario: recovery_complete
+----------------------------------------
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+100   769  100   714  100    55     40      3  0:00:18  0:00:17  0:00:01   176
+
+
+
+═══════════════════════════════════════
+PHASE 5: TEMPS DE REPRISE
+═══════════════════════════════════════
+Lancement du repair pour resynchroniser...
+[2026-01-04 17:46:53,325] Starting repair command #1, repairing keyspace projet_bd_rf3 with repair options (parallelism: parallel, primary range: false, incremental: true, job threads: 1, ColumnFamilies: [], dataCenters: [], hosts: [], # of ranges: 768, ignore unreplicated keyspaces: false)
+[2026-01-04 17:46:53,330] Repair command #1 failed with error Nothing to repair for (-1856838485052926021,-1852207185079395432] in projet_bd_rf3 - aborting
+[2026-01-04 17:46:53,330] Repair command #1 finished with error
+
+Temps de repair: 1 secondes
+
+═══════════════════════════════════════
+TEST DE RÉSILIENCE TERMINÉ
+═══════════════════════════════════════
+Temps de reprise total: 1 secondes

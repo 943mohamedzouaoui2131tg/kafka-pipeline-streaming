@@ -131,91 +131,6 @@ async function runCassandraQuery(queryType) {
 }
 
 // ============================================================================
-// OVERVIEW CHARTS
-// ============================================================================
-
-function updateThroughputChart() {
-    const ctx = document.getElementById('throughputChart');
-    if (!ctx) return;
-    
-    destroyChart('throughput');
-    
-    const labels = streamingMetrics.timestamps.length > 0 ? streamingMetrics.timestamps : ['Now'];
-    const data = streamingMetrics.throughput.length > 0 ? streamingMetrics.throughput : [0];
-    
-    charts.throughput = new Chart(ctx.getContext('2d'), {
-        type: 'line',
-        data: {
-            labels: labels,
-            datasets: [{
-                label: 'Messages/min',
-                data: data,
-                borderColor: '#667eea',
-                backgroundColor: 'rgba(102, 126, 234, 0.2)',
-                tension: 0.4,
-                fill: true
-            }]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            scales: {
-                y: {
-                    beginAtZero: true,
-                    title: { display: true, text: 'Messages/minute' }
-                }
-            },
-            plugins: {
-                legend: { display: true, position: 'top' }
-            }
-        }
-    });
-}
-
-function updateRevenueOverTimeChart() {
-    const ctx = document.getElementById('revenueOverTimeChart');
-    if (!ctx) return;
-    
-    destroyChart('revenueOverTime');
-    
-    const labels = streamingMetrics.timestamps.length > 0 ? streamingMetrics.timestamps : ['Now'];
-    const data = streamingMetrics.revenue.length > 0 ? streamingMetrics.revenue : [0];
-    
-    charts.revenueOverTime = new Chart(ctx.getContext('2d'), {
-        type: 'line',
-        data: {
-            labels: labels,
-            datasets: [{
-                label: 'Total Revenue ($)',
-                data: data,
-                borderColor: '#13aa52',
-                backgroundColor: 'rgba(19, 170, 82, 0.2)',
-                tension: 0.4,
-                fill: true
-            }]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            scales: {
-                y: {
-                    beginAtZero: true,
-                    title: { display: true, text: 'Revenue ($)' },
-                    ticks: {
-                        callback: function(value) {
-                            return '$' + value.toLocaleString();
-                        }
-                    }
-                }
-            },
-            plugins: {
-                legend: { display: true, position: 'top' }
-            }
-        }
-    });
-}
-
-// ============================================================================
 // MONGO CHARTS
 // ============================================================================
 
@@ -334,3 +249,428 @@ function renderMongoHourlyChart(data) {
         }
     });
 }
+
+console.log('✅ Dashboard Part 2 initialized successfully');
+// ============================================================================
+// STANDALONE SHARD DISTRIBUTION VISUALIZATION
+// Add this entire block to your dashboard JavaScript file
+// No modifications to existing code needed
+// ============================================================================
+
+let shardDistributionChart = null;
+let boroughByShardChart = null;
+
+/**
+ * Main function to run shard distribution analysis
+ * Called directly from the HTML button: onclick="analyzeShardDistribution()"
+ */
+async function analyzeShardDistribution() {
+    const resultDiv = document.getElementById('mongoShardDistributionResult');
+    const tableDiv = document.getElementById('shardDistributionTable');
+    
+    // Show loading state
+    resultDiv.innerHTML = '<div class="loading">⏳ Analyzing shard distribution...</div>';
+    if (tableDiv) {
+        tableDiv.innerHTML = '';
+    }
+    
+    try {
+        // Fetch data from backend
+        const response = await fetch('/mongo/analytics/shard-distribution-detailed');
+
+        
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        
+        const data = await response.json();
+        
+        if (!data.success) {
+            throw new Error(data.error || 'Failed to fetch shard distribution');
+        }
+        
+        // Display results
+        displayShardDistributionResults(data);
+        createShardDistributionTable(data);
+        createShardDistributionCharts(data);
+        
+    } catch (error) {
+        console.error('Shard distribution error:', error);
+        resultDiv.innerHTML = `
+            <div class="error">
+                <strong>Error:</strong> ${error.message}
+                <br><small>Make sure MongoDB sharding is enabled and the backend endpoint is available.</small>
+            </div>
+        `;
+    }
+}
+
+/**
+ * Display summary results
+ */
+function displayShardDistributionResults(data) {
+    const resultDiv = document.getElementById('mongoShardDistributionResult');
+
+    const totalDocs = data.total_documents || 0;
+    const numShards = data.total_shards || (data.shards ? data.shards.length : 0);
+    const executionTime = data.execution_time_ms || 0;
+
+    resultDiv.innerHTML = `
+        <div class="execution-time">
+            Execution time: ${executionTime.toFixed(2)} ms
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:15px;margin-top:15px;">
+            <div class="metric-card">
+                <div class="metric-label">TOTAL DOCUMENTS</div>
+                <div class="metric-value">${totalDocs.toLocaleString()}</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-label">TOTAL SHARDS</div>
+                <div class="metric-value">${numShards}</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-label">AVG DOCS / SHARD</div>
+                <div class="metric-value">
+                    ${numShards > 0 ? Math.round(totalDocs / numShards).toLocaleString() : 0}
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+
+/**
+ * Create detailed table with shard information
+ */
+function createShardDistributionTable(data) {
+    const tableDiv = document.getElementById('shardDistributionTable');
+    if (!tableDiv) return;
+
+    const shards = data.shards || [];
+    const boroughTotals = data.borough_totals || {};
+
+    // Correct sort field
+    const sortedShards = [...shards].sort(
+        (a, b) => b.documents - a.documents
+    );
+
+    let tableHTML = `
+        <h4 style="margin-top:30px;">Shard Details</h4>
+        <table>
+            <thead>
+                <tr>
+                    <th>Shard ID</th>
+                    <th>Documents</th>
+                    <th>Distribution</th>
+                    <th>Data Size (MB)</th>
+                    <th>Avg Object Size (KB)</th>
+                    <th>Chunks</th>
+                </tr>
+            </thead>
+            <tbody>
+    `;
+
+    sortedShards.forEach(shard => {
+        const percentage = shard.percentage || 0;
+
+        let barColor = '#13aa52';
+        if (percentage > 40) barColor = '#f97316';
+        else if (percentage < 25) barColor = '#fbbf24';
+
+        tableHTML += `
+            <tr>
+                <td><strong>${shard.shard_id}</strong></td>
+                <td>${shard.documents.toLocaleString()}</td>
+                <td>
+                    <div class="progress-bar">
+                        <div class="progress-fill"
+                             style="width:${percentage}%;background:${barColor}">
+                            ${percentage.toFixed(2)}%
+                        </div>
+                    </div>
+                </td>
+                <td>${shard.data_size_mb.toFixed(2)}</td>
+                <td>${shard.avg_obj_size_kb.toFixed(2)}</td>
+                <td>${shard.chunks}</td>
+            </tr>
+        `;
+    });
+
+    tableHTML += `</tbody></table>`;
+
+    // Borough totals (already correct)
+    if (Object.keys(boroughTotals).length) {
+        const total = Object.values(boroughTotals).reduce((a, b) => a + b, 0);
+
+        tableHTML += `
+            <h4 style="margin-top:30px;">Top Boroughs</h4>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Borough</th>
+                        <th>Trips</th>
+                        <th>%</th>
+                    </tr>
+                </thead>
+                <tbody>
+        `;
+
+        Object.entries(boroughTotals)
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, 10)
+            .forEach(([borough, count]) => {
+                const pct = total ? ((count / total) * 100).toFixed(2) : 0;
+                tableHTML += `
+                    <tr>
+                        <td>${borough}</td>
+                        <td>${count.toLocaleString()}</td>
+                        <td>${pct}%</td>
+                    </tr>
+                `;
+            });
+
+        tableHTML += `</tbody></table>`;
+    }
+
+    tableDiv.innerHTML = tableHTML;
+}
+
+
+/**
+ * Create visualizations (charts)
+ */
+function createShardDistributionCharts(data) {
+    const shards = data.shards || [];
+    if (!shards.length) return;
+
+    const labels = shards.map(s => s.shard_id);
+    const documents = shards.map(s => s.documents);
+    const sizesMB = shards.map(s => s.data_size_mb);
+
+    const colors = generateShardColors(shards.length);
+
+    createDocumentDistributionChart(labels, documents, colors, data);
+    createDataSizeChart(labels, sizesMB);
+}
+
+
+/**
+ * Create doughnut chart for document distribution
+ */
+function createDocumentDistributionChart(labels, data, colors, fullData) {
+    const ctx = document.getElementById('shardDistributionChart');
+    if (!ctx) {
+        console.warn('Canvas element shardDistributionChart not found');
+        return;
+    }
+    
+    // Destroy existing chart
+    if (shardDistributionChart) {
+        shardDistributionChart.destroy();
+    }
+    
+    shardDistributionChart = new Chart(ctx, {
+        type: 'doughnut',
+        data: {
+            labels: labels,
+            datasets: [{
+                label: 'Documents per Shard',
+                data: data,
+                backgroundColor: colors,
+                borderColor: '#fff',
+                borderWidth: 3
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                title: {
+                    display: true,
+                    text: 'Document Distribution Across Shards',
+                    font: {
+                        size: 16,
+                        weight: 'bold'
+                    },
+                    padding: 20
+                },
+                legend: {
+                    position: 'bottom',
+                    labels: {
+                        padding: 15,
+                        font: {
+                            size: 12
+                        }
+                    }
+                },
+                tooltip: {
+                    callbacks: {
+                        label: function (context) {
+    const shard = fullData.shards[context.dataIndex];
+    return [
+        `Shard: ${shard.shard_id}`,
+        `Documents: ${shard.documents.toLocaleString()}`,
+        `Percentage: ${shard.percentage.toFixed(2)}%`
+    ];
+}
+                    },
+                    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                    padding: 12,
+                    titleFont: {
+                        size: 14
+                    },
+                    bodyFont: {
+                        size: 13
+                    }
+                }
+            }
+        }
+    });
+}
+
+/**
+ * Create bar chart for data size distribution
+ */
+function createDataSizeChart(labels, dataSizes) {
+    const ctx = document.getElementById('boroughByShardChart');
+    if (!ctx) {
+        console.warn('Canvas element boroughByShardChart not found');
+        return;
+    }
+    
+    // Destroy existing chart
+    if (boroughByShardChart) {
+        boroughByShardChart.destroy();
+    }
+    
+    boroughByShardChart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: labels,
+            datasets: [{
+                label: 'Data Size (MB)',
+                data: dataSizes,
+                backgroundColor: 'rgba(102, 126, 234, 0.7)',
+                borderColor: 'rgba(102, 126, 234, 1)',
+                borderWidth: 2,
+                borderRadius: 5
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                title: {
+                    display: true,
+                    text: 'Data Size Distribution Across Shards',
+                    font: {
+                        size: 16,
+                        weight: 'bold'
+                    },
+                    padding: 20
+                },
+                legend: {
+                    display: false
+                },
+                tooltip: {
+                    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                    padding: 12,
+                    callbacks: {
+                        label: function(context) {
+                            return `Size: ${context.parsed.y} MB`;
+                        }
+                    }
+                }
+            },
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    title: {
+                        display: true,
+                        text: 'Size (MB)',
+                        font: {
+                            size: 13,
+                            weight: 'bold'
+                        }
+                    },
+                    ticks: {
+                        callback: function(value) {
+                            return value.toFixed(1) + ' MB';
+                        }
+                    },
+                    grid: {
+                        color: 'rgba(0, 0, 0, 0.05)'
+                    }
+                },
+                x: {
+                    title: {
+                        display: true,
+                        text: 'Shard',
+                        font: {
+                            size: 13,
+                            weight: 'bold'
+                        }
+                    },
+                    grid: {
+                        display: false
+                    }
+                }
+            }
+        }
+    });
+}
+
+/**
+ * Generate colors for shards
+ */
+function generateShardColors(count) {
+    const baseColors = [
+        'rgba(102, 126, 234, 0.8)',  // Purple
+        'rgba(19, 170, 82, 0.8)',     // Green
+        'rgba(18, 135, 168, 0.8)',    // Blue
+        'rgba(255, 159, 64, 0.8)',    // Orange
+        'rgba(255, 99, 132, 0.8)',    // Red
+        'rgba(153, 102, 255, 0.8)',   // Violet
+        'rgba(75, 192, 192, 0.8)',    // Teal
+        'rgba(255, 205, 86, 0.8)'     // Yellow
+    ];
+    
+    const colors = [];
+    for (let i = 0; i < count; i++) {
+        colors.push(baseColors[i % baseColors.length]);
+    }
+    return colors;
+}
+
+// ============================================================================
+// Optional: Auto-refresh functionality
+// Uncomment to enable automatic updates every 30 seconds
+// ============================================================================
+
+/*
+let shardDistributionAutoRefresh = null;
+
+function startShardDistributionAutoRefresh() {
+    stopShardDistributionAutoRefresh();
+    shardDistributionAutoRefresh = setInterval(() => {
+        // Only refresh if the MongoDB panel is active
+        const mongoPanel = document.getElementById('mongoPanel');
+        if (mongoPanel && mongoPanel.classList.contains('active')) {
+            console.log('Auto-refreshing shard distribution...');
+            analyzeShardDistribution();
+        }
+    }, 30000); // 30 seconds
+}
+
+function stopShardDistributionAutoRefresh() {
+    if (shardDistributionAutoRefresh) {
+        clearInterval(shardDistributionAutoRefresh);
+        shardDistributionAutoRefresh = null;
+    }
+}
+
+// Start auto-refresh when the page loads
+window.addEventListener('load', startShardDistributionAutoRefresh);
+*/
+
+console.log('✅ Shard Distribution Visualization loaded successfully');
