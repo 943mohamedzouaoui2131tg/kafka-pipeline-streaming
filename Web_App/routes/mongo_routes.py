@@ -1,11 +1,16 @@
-# mongo_routes.py
 from flask import Blueprint, request, jsonify
 from db.mongo import collection
+from pymongo import MongoClient
 from bson.objectid import ObjectId
 import time
 from datetime import datetime
+import os
 
 mongo_bp = Blueprint("mongo", __name__)
+
+# Get MongoDB client for admin operations
+MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27019")
+admin_client = MongoClient(MONGO_URI)
 
 @mongo_bp.route("/trips", methods=["GET"])
 def get_trips():
@@ -27,7 +32,7 @@ def get_trips():
 
 @mongo_bp.route("/analytics/top-zones-by-revenue", methods=["GET"])
 def top_zones_by_revenue():
-    """Top zones par revenus"""
+    """Top zones by revenue"""
     try:
         start_time = time.time()
         limit = int(request.args.get("limit", 10))
@@ -35,16 +40,16 @@ def top_zones_by_revenue():
         pipeline = [
             {
                 "$group": {
-                    "_id": "$PULocationID.zone",
-                    "borough": {"$first": "$PULocationID.borough"},
-                    "total_revenue": {"$sum": "$total_amount"},
+                    "_id": "$pickup.location.borough",
+                    "total_revenue": {"$sum": "$payment.total_amount"},
                     "total_trips": {"$count": {}},
-                    "avg_fare": {"$avg": "$fare_amount"}
+                    "avg_fare": {"$avg": "$payment.fare_amount"}
                 }
             },
             {"$sort": {"total_revenue": -1}},
             {"$limit": limit}
         ]
+
         
         result = list(collection.aggregate(pipeline))
         execution_time = time.time() - start_time
@@ -52,14 +57,15 @@ def top_zones_by_revenue():
         return jsonify({
             "data": result,
             "execution_time_ms": round(execution_time * 1000, 2),
-            "count": len(result)
+            "count": len(result),
+            "success": True
         })
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": str(e), "success": False}), 500
 
 @mongo_bp.route("/analytics/top-zones-by-trips", methods=["GET"])
 def top_zones_by_trips():
-    """Top zones par volume de trajets"""
+    """Top zones by trip volume"""
     try:
         start_time = time.time()
         limit = int(request.args.get("limit", 10))
@@ -67,16 +73,16 @@ def top_zones_by_trips():
         pipeline = [
             {
                 "$group": {
-                    "_id": "$PULocationID.zone",
-                    "borough": {"$first": "$PULocationID.borough"},
+                    "_id": "$pickup.location.borough",
                     "total_trips": {"$count": {}},
-                    "total_revenue": {"$sum": "$total_amount"},
+                    "total_revenue": {"$sum": "$payment.total_amount"},
                     "avg_passengers": {"$avg": "$passenger_count"}
                 }
             },
             {"$sort": {"total_trips": -1}},
             {"$limit": limit}
         ]
+
         
         result = list(collection.aggregate(pipeline))
         execution_time = time.time() - start_time
@@ -84,14 +90,15 @@ def top_zones_by_trips():
         return jsonify({
             "data": result,
             "execution_time_ms": round(execution_time * 1000, 2),
-            "count": len(result)
+            "count": len(result),
+            "success": True
         })
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": str(e), "success": False}), 500
 
 @mongo_bp.route("/analytics/passenger-distribution", methods=["GET"])
 def passenger_distribution():
-    """Distribution des nombre de passagers"""
+    """Passenger count distribution"""
     try:
         start_time = time.time()
         
@@ -113,30 +120,36 @@ def passenger_distribution():
         return jsonify({
             "data": result,
             "execution_time_ms": round(execution_time * 1000, 2),
-            "count": len(result)
+            "count": len(result),
+            "success": True
         })
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": str(e), "success": False}), 500
 
 @mongo_bp.route("/analytics/anomaly-detection", methods=["GET"])
 def anomaly_detection():
-    """Détection de trips anormaux (distance nulle, vitesse excessive)"""
+    """Detect anomalous trips with clear categorization"""
     try:
         start_time = time.time()
+        limit = int(request.args.get("limit", 100))
         
         pipeline = [
             {
                 "$addFields": {
                     "pickup_dt": {
                         "$dateFromString": {
-                            "dateString": "$tpep_pickup_datetime",
-                            "format": "%Y-%m-%d %H:%M:%S"
+                            "dateString": "$pickup.datetime",
+                            "format": "%Y-%m-%d %H:%M:%S",
+                            "onError": None,
+                            "onNull": None
                         }
                     },
                     "dropoff_dt": {
                         "$dateFromString": {
-                            "dateString": "$tpep_dropoff_datetime",
-                            "format": "%Y-%m-%d %H:%M:%S"
+                            "dateString": "$dropoff.datetime",
+                            "format": "%Y-%m-%d %H:%M:%S",
+                            "onError": None,
+                            "onNull": None
                         }
                     }
                 }
@@ -144,51 +157,178 @@ def anomaly_detection():
             {
                 "$addFields": {
                     "duration_minutes": {
-                        "$divide": [
-                            {"$subtract": ["$dropoff_dt", "$pickup_dt"]},
-                            60000
-                        ]
+                        "$cond": {
+                            "if": {
+                                "$and": [
+                                    {"$ne": ["$pickup_dt", None]},
+                                    {"$ne": ["$dropoff_dt", None]}
+                                ]
+                            },
+                            "then": {
+                                "$divide": [
+                                    {"$subtract": ["$dropoff_dt", "$pickup_dt"]},
+                                    60000
+                                ]
+                            },
+                            "else": None
+                        }
+                    }
+                }
+            },
+            {
+                "$addFields": {
+                    "speed_kmh": {
+                        "$cond": {
+                            "if": {
+                                "$and": [
+                                    {"$gt": ["$metrics.distance_km", 0]},
+                                    {"$gt": ["$duration_minutes", 0]}
+                                ]
+                            },
+                            "then": {
+                                "$divide": [
+                                    "$metrics.distance_km",
+                                    {"$divide": ["$duration_minutes", 60]}
+                                ]
+                            },
+                            "else": 0
+                        }
                     }
                 }
             },
             {
                 "$match": {
                     "$or": [
-                        {"trip_distance": 0},
-                        {"duration_minutes": {"$lte": 0}},
-                        {"total_amount": {"$lte": 0}},
+                        # Zero distance anomaly
                         {
-                            "$expr": {
-                                "$gt": [
-                                    {"$divide": ["$trip_distance", {"$divide": ["$duration_minutes", 60]}]},
-                                    100
-                                ]
-                            }
-                        }
+                            "$and": [
+                                {"metrics.distance_km": {"$lte": 0}},
+                                {"payment.total_amount": {"$gt": 0}}
+                            ]
+                        },
+                        # Invalid duration anomaly
+                        {
+                            "$or": [
+                                {"duration_minutes": {"$lte": 0}},
+                                {"duration_minutes": None}
+                            ]
+                        },
+                        # Invalid amount anomaly
+                        {
+                            "$or": [
+                                {"payment.total_amount": {"$lte": 0}},
+                                {"payment.fare_amount": {"$lt": 0}},
+                                {"payment.tip_amount": {"$lt": 0}}
+                            ]
+                        },
+                        # High speed anomaly (>150 km/h in city)
+                        {"speed_kmh": {"$gt": 150}}
                     ]
                 }
             },
-            {"$limit": 100}
+            {
+                "$limit": limit
+            },
+            {
+                "$project": {
+                    "_id": {"$toString": "$_id"},
+                    "pickup_zone": "$pickup.location.zone",
+                    "dropoff_zone": "$dropoff.location.zone",
+                    "borough": "$pickup.location.borough",
+                    "pickup_datetime": "$pickup.datetime",
+                    "dropoff_datetime": "$dropoff.datetime",
+                    "distance_km": "$metrics.distance_km",
+                    "distance_miles": {"$multiply": ["$metrics.distance_km", 0.621371]},
+                    "duration_minutes": 1,
+                    "total_amount": "$payment.total_amount",
+                    "fare_amount": "$payment.fare_amount",
+                    "tip_amount": "$payment.tip_amount",
+                    "speed_kmh": 1,
+                    "speed_mph": {"$multiply": ["$speed_kmh", 0.621371]},
+                    "passenger_count": 1,
+                    # Categorize anomaly types
+                    "anomaly_type": {
+                        "$switch": {
+                            "branches": [
+                                {
+                                    "case": {
+                                        "$and": [
+                                            {"$lte": ["$metrics.distance_km", 0]},
+                                            {"$gt": ["$payment.total_amount", 0]}
+                                        ]
+                                    },
+                                    "then": "zero_distance"
+                                },
+                                {
+                                    "case": {
+                                        "$or": [
+                                            {"$lte": ["$duration_minutes", 0]},
+                                            {"$eq": ["$duration_minutes", None]}
+                                        ]
+                                    },
+                                    "then": "invalid_duration"
+                                },
+                                {
+                                    "case": {
+                                        "$or": [
+                                            {"$lte": ["$payment.total_amount", 0]},
+                                            {"$lt": ["$payment.fare_amount", 0]}
+                                        ]
+                                    },
+                                    "then": "invalid_amount"
+                                },
+                                {
+                                    "case": {"$gt": ["$speed_kmh", 150]},
+                                    "then": "high_speed"
+                                }
+                            ],
+                            "default": "other"
+                        }
+                    }
+                }
+            }
         ]
         
         result = list(collection.aggregate(pipeline))
+        
+        # Count anomaly types
+        type_counts = {
+            "zero_distance": 0,
+            "invalid_duration": 0,
+            "invalid_amount": 0,
+            "high_speed": 0,
+            "other": 0
+        }
+        
         for doc in result:
-            if "_id" in doc:
-                doc["_id"] = str(doc["_id"])
+            anomaly_type = doc.get("anomaly_type", "other")
+            type_counts[anomaly_type] = type_counts.get(anomaly_type, 0) + 1
         
         execution_time = time.time() - start_time
         
         return jsonify({
             "data": result,
             "execution_time_ms": round(execution_time * 1000, 2),
-            "count": len(result)
+            "count": len(result),
+            "anomaly_counts": type_counts,
+            "summary": {
+                "zero_distance": type_counts["zero_distance"],
+                "invalid_duration": type_counts["invalid_duration"],
+                "invalid_amount": type_counts["invalid_amount"],
+                "high_speed": type_counts["high_speed"],
+                "other": type_counts["other"]
+            },
+            "success": True
         })
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": str(e), "success": False}), 500
+
 
 @mongo_bp.route("/analytics/hourly-stats", methods=["GET"])
 def hourly_stats():
-    """Stats par heure"""
+    """Hourly statistics"""
     try:
         start_time = time.time()
         
@@ -197,7 +337,7 @@ def hourly_stats():
                 "$addFields": {
                     "pickup_dt": {
                         "$dateFromString": {
-                            "dateString": "$tpep_pickup_datetime",
+                            "dateString": "$pickup.datetime",
                             "format": "%Y-%m-%d %H:%M:%S"
                         }
                     }
@@ -207,13 +347,14 @@ def hourly_stats():
                 "$group": {
                     "_id": {"$hour": "$pickup_dt"},
                     "total_trips": {"$count": {}},
-                    "total_revenue": {"$sum": "$total_amount"},
-                    "avg_fare": {"$avg": "$fare_amount"},
-                    "avg_distance": {"$avg": "$trip_distance"}
+                    "total_revenue": {"$sum": "$payment.total_amount"},
+                    "avg_fare": {"$avg": "$payment.fare_amount"},
+                    "avg_distance": {"$avg": "$metrics.distance_km"}
                 }
             },
             {"$sort": {"_id": 1}}
         ]
+
         
         result = list(collection.aggregate(pipeline))
         execution_time = time.time() - start_time
@@ -221,9 +362,331 @@ def hourly_stats():
         return jsonify({
             "data": result,
             "execution_time_ms": round(execution_time * 1000, 2),
-            "count": len(result)
+            "count": len(result),
+            "success": True
         })
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": str(e), "success": False}), 500
 
+@mongo_bp.route("/cluster/shard-status", methods=["GET"])
+def shard_status():
+    """Get MongoDB sharding status with detailed shard information"""
+    try:
+        start_time = time.time()
+        
+        db = collection.database
+        
+        # Connect to mongos directly for admin operations
+        mongos_client = MongoClient(MONGO_URI, directConnection=False)
+        admin_db = mongos_client.admin
+        config_db = mongos_client.config
+        
+        # Get sharding status
+        sharding_enabled = False
+        shards_info = []
+        total_documents = 0
+        total_data_size = 0
+        
+        try:
+            # Check if sharding is enabled by checking config.shards
+            shard_list = list(config_db.shards.find())
+            sharding_enabled = len(shard_list) > 0
+            
+            print(f"Found {len(shard_list)} shards: {[s['_id'] for s in shard_list]}")
+            
+            if sharding_enabled:
+                # Get collection stats from config server
+                ns = f"{db.name}.{collection.name}"
+                chunks = list(config_db.chunks.find({"ns": ns}))
+                
+                print(f"Found {len(chunks)} chunks for collection {ns}")
+                
+                # Group chunks by shard
+                shard_chunks = {}
+                for chunk in chunks:
+                    shard_id = chunk.get('shard')
+                    if shard_id not in shard_chunks:
+                        shard_chunks[shard_id] = []
+                    shard_chunks[shard_id].append(chunk)
+                
+                # Get stats for each shard
+                for shard in shard_list:
+                    shard_id = shard['_id']
+                    shard_host = shard['host']
+                    
+                    # Parse the replica set connection string
+                    # Format: "sh1/shard1a:27031,shard1b:27032"
+                    if '/' in shard_host:
+                        rs_name, hosts = shard_host.split('/', 1)
+                        # Use the first host for connection
+                        first_host = hosts.split(',')[0]
+                    else:
+                        first_host = shard_host
+                    
+                    try:
+                        # Connect to the shard's primary through mongos using dbStats
+                        # This is more reliable than direct connection
+                        shard_stats_cmd = {
+                            'dbStats': 1,
+                            'scale': 1
+                        }
+                        
+                        # Use collStats with sharding info
+                        coll_stats_cmd = {
+                            'collStats': collection.name,
+                            'verbose': True
+                        }
+                        
+                        try:
+                            coll_stats = db.command(coll_stats_cmd)
+                            
+                            # Get shard-specific stats
+                            shards_data = coll_stats.get('shards', {})
+                            
+                            if shard_id in shards_data:
+                                shard_coll_stats = shards_data[shard_id]
+                                doc_count = shard_coll_stats.get('count', 0)
+                                data_size = shard_coll_stats.get('size', 0)
+                                storage_size = shard_coll_stats.get('storageSize', 0)
+                            else:
+                                # Fallback: estimate from chunks
+                                doc_count = 0
+                                data_size = 0
+                                storage_size = 0
+                        except Exception as stats_error:
+                            print(f"Could not get collection stats: {stats_error}")
+                            # Use approximate calculation
+                            total_count = collection.count_documents({})
+                            chunks_on_shard = len(shard_chunks.get(shard_id, []))
+                            total_chunks = len(chunks)
+                            
+                            if total_chunks > 0:
+                                doc_count = int(total_count * (chunks_on_shard / total_chunks))
+                            else:
+                                doc_count = 0
+                            
+                            data_size = 0
+                            storage_size = 0
+                        
+                        status = "connected"
+                        
+                        total_documents += doc_count
+                        total_data_size += data_size
+                        
+                        shards_info.append({
+                            "name": shard_id,
+                            "host": shard_host,
+                            "status": status,
+                            "documents": doc_count,
+                            "dataSize": data_size,
+                            "storageSize": storage_size,
+                            "chunks": len(shard_chunks.get(shard_id, []))
+                        })
+                        
+                    except Exception as shard_error:
+                        print(f"Error getting stats for shard {shard_id}: {shard_error}")
+                        # Shard is not connected
+                        shards_info.append({
+                            "name": shard_id,
+                            "host": shard_host,
+                            "status": "disconnected",
+                            "documents": 0,
+                            "dataSize": 0,
+                            "storageSize": 0,
+                            "chunks": len(shard_chunks.get(shard_id, [])),
+                            "error": str(shard_error)
+                        })
+                
+                # Calculate percentages
+                for shard in shards_info:
+                    if total_documents > 0:
+                        shard["percentage"] = round((shard["documents"] / total_documents) * 100, 2)
+                    else:
+                        shard["percentage"] = 0
+                    
+                    if total_data_size > 0:
+                        shard["dataSizePercentage"] = round((shard["dataSize"] / total_data_size) * 100, 2)
+                    else:
+                        shard["dataSizePercentage"] = 0
+            
+            else:
+                # Not sharded - standalone or replica set
+                total_documents = collection.count_documents({})
+                db_stats = db.command("dbStats")
+                coll_stats = db.command("collStats", collection.name)
+                
+                shards_info = [{
+                    "name": "standalone",
+                    "host": "localhost",
+                    "status": "connected",
+                    "documents": total_documents,
+                    "dataSize": coll_stats.get('size', 0),
+                    "storageSize": coll_stats.get('storageSize', 0),
+                    "percentage": 100.0,
+                    "dataSizePercentage": 100.0,
+                    "chunks": 1
+                }]
+                total_data_size = coll_stats.get('size', 0)
+        
+        except Exception as e:
+            print(f"Error in sharding detection: {e}")
+            import traceback
+            traceback.print_exc()
+            
+            # Fallback to simple stats
+            total_documents = collection.count_documents({})
+            db_stats = db.command("dbStats")
+            
+            shards_info = [{
+                "name": "standalone",
+                "host": "localhost",
+                "status": "connected",
+                "documents": total_documents,
+                "dataSize": db_stats.get('dataSize', 0),
+                "storageSize": db_stats.get('storageSize', 0),
+                "percentage": 100.0,
+                "dataSizePercentage": 100.0,
+                "chunks": 1
+            }]
+            total_data_size = db_stats.get('dataSize', 0)
+            sharding_enabled = False
+        
+        finally:
+            try:
+                mongos_client.close()
+            except:
+                pass
+        
+        execution_time = time.time() - start_time
+        
+        return jsonify({
+            "sharded": sharding_enabled,
+            "shards": shards_info,
+            "totalShards": len(shards_info),
+            "totalDocuments": total_documents,
+            "totalDataSize": total_data_size,
+            "database": db.name,
+            "collection": collection.name,
+            "execution_time_ms": round(execution_time * 1000, 2),
+            "success": True
+        })
+        
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": str(e), "success": False}), 500
 
+@mongo_bp.route("/cluster/stats", methods=["GET"])
+def cluster_stats():
+    """Get per-shard detailed statistics (documents & size)"""
+    try:
+        start_time = time.time()
+
+        db = collection.database
+        coll_name = collection.name
+
+        # Database & collection stats (global)
+        db_stats = db.command("dbStats")
+        coll_stats = db.command("collStats", coll_name)
+
+        total_docs = coll_stats.get("count", 0)
+        total_size = coll_stats.get("size", 0)
+
+        # Access config database (MANDATORY for sharding)
+        config_db = admin_client.config
+
+        # Get shards list
+        shards = list(config_db.shards.find())
+
+        # Get chunks for this collection
+        namespace = f"{db.name}.{coll_name}"
+        chunks = list(config_db.chunks.find({"ns": namespace}))
+
+        total_chunks = len(chunks)
+
+        # Count chunks per shard
+        shard_chunk_count = {}
+        for chunk in chunks:
+            shard_id = chunk["shard"]
+            shard_chunk_count[shard_id] = shard_chunk_count.get(shard_id, 0) + 1
+
+        shard_details = []
+
+        for shard in shards:
+            shard_id = shard["_id"]
+            shard_chunks = shard_chunk_count.get(shard_id, 0)
+
+            # Estimate docs & size proportionally
+            est_docs = int((shard_chunks / total_chunks) * total_docs) if total_chunks else 0
+            est_size = int((shard_chunks / total_chunks) * total_size) if total_chunks else 0
+
+            shard_details.append({
+                "shard": shard_id,
+                "hosts": shard["host"],
+                "chunks": shard_chunks,
+                "estimated_documents": est_docs,
+                "estimated_data_size_bytes": est_size
+            })
+
+        execution_time = time.time() - start_time
+
+        return jsonify({
+            "database": db.name,
+            "collection": coll_name,
+            "total_documents": total_docs,
+            "total_data_size_bytes": total_size,
+            "shards": shard_details,
+            "execution_time_ms": round(execution_time * 1000, 2),
+            "success": True
+        })
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": str(e), "success": False}), 500
+
+@mongo_bp.route("/cluster/debug-sharding", methods=["GET"])
+def debug_sharding():
+    """Debug endpoint to check sharding configuration"""
+    try:
+        mongos_client = MongoClient(MONGO_URI, directConnection=False)
+        config_db = mongos_client.config
+        admin_db = mongos_client.admin
+        
+        # Get shard list
+        shards = list(config_db.shards.find())
+        
+        # Get databases
+        databases = list(config_db.databases.find())
+        
+        # Get chunks for our collection
+        ns = f"{collection.database.name}.{collection.name}"
+        chunks = list(config_db.chunks.find({"ns": ns}))
+        
+        # Get collection info
+        collections = list(config_db.collections.find({"_id": ns}))
+        
+        # Try to get shard distribution
+        try:
+            db = mongos_client[collection.database.name]
+            shard_dist = db.command({
+                'collStats': collection.name,
+                'verbose': True
+            })
+        except Exception as e:
+            shard_dist = {"error": str(e)}
+        
+        mongos_client.close()
+        
+        return jsonify({
+            "shards": shards,
+            "databases": databases,
+            "chunks": chunks,
+            "collections": collections,
+            "shardDistribution": shard_dist,
+            "success": True
+        })
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": str(e), "success": False}), 500

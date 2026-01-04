@@ -134,9 +134,8 @@ try:
             }
             
             try:
-                collection.insert_one(data)
-                consumer.commit()
-                print(f"Inserted and commit the insert: {mongo_doc}")
+                collection.insert_one(mongo_doc)
+                print(f"Inserted: {mongo_doc}")
             except errors.PyMongoError as e:
                 print(f"Error inserting to MongoDB: {e}")
 
