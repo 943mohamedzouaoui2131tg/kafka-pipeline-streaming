@@ -1,0 +1,37 @@
+version: "3.8"
+name: "mongo_compose"
+services:
+    # CONFIG SERVER
+    configsvr:
+        image: mongo
+        container_name: configsvr
+        command: mongod --configsvr --replSet ConfigRS --port 27020 --bind_ip_all
+        ports:
+            - 27020:27020
+    
+    # SHARD1 (2 ReplicaSet)
+    shard1a:
+        image: mongo
+        container_name: shard1a
+        command: mongod --shardsvr --replSet sh1 --port 27031 --bind_ip_all
+        ports:
+            - 27031:27031
+
+    shard1b:
+        image: mongo
+        container_name: shard1b
+        command: mongod --shardsvr --replSet sh1 --port 27032 --bind_ip_all
+        ports:
+            - 27032:27032
+    
+    # MONGOS ROUTER
+    mongos:
+        image: mongo
+        container_name: mongos
+        depends_on:
+            - configsvr
+            - shard1a
+            - shard1b
+        command: mongos --configdb ConfigRS/configsvr:27020 --port 27019 --bind_ip_all
+        ports:
+            - 27019:27019

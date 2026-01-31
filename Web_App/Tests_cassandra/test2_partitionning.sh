@@ -14,7 +14,7 @@ CREATE TABLE IF NOT EXISTS test_partition_borough_hour (
 
 -- Stratégie 2: Temporal buckets (fenêtres de 6 heures)
 CREATE TABLE IF NOT EXISTS test_partition_time_bucket (
-    time_bucket TEXT,  -- format: "2013-01-01-00" (date + 6h bucket)
+    time_bucket TEXT,  -- format: "2024-01-01-00" (date + 6h bucket)
     borough TEXT,
     pickup_hour INT,
     pickup_date DATE,

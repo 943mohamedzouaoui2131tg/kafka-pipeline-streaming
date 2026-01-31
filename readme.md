@@ -165,20 +165,10 @@ Exécutez le script bash `mongo-up.sh` pour créer les shards de MongoDB :
 ```bash
 
 bash mongo-up.sh
+& "C:\Program Files\Git\bin\bash.exe" mongo-up.sh
 
 ```
 
-### 7. Démarrer le producteur
-
-Dans un autre terminal :
-
-```bash
-
-docker exec -it producer bash
-
-python3 ./src/producer.py
-
-```
 
 ### 8. Démarrer les consommateurs
 
@@ -233,11 +223,22 @@ Une fois les conteneurs démarrés, connectez-les au réseau `abd` :
 
 ```bash
 
-docker network connect abd cassandra1
+docker network connect abd cassandra
 
 docker network connect abd cassandra_consumer 
 ```
 
+### 7. Démarrer le producteur
+
+Dans un autre terminal :
+
+```bash
+
+docker exec -it producer bash
+
+python3 ./src/producer.py
+
+```
 ### 10. Arrêt de l’infrastructure
 
 Pour tout arrêter :

@@ -21,11 +21,7 @@ test_consistency() {
     
     echo ""
     echo "Résultats:"
-    cat "results_resilience_${cl}_${scenario}.json" | jq '{
-        cluster: .cluster_status,
-        writes: .write_results,
-        reads: .read_results
-    }'
+    cat "results_resilience_${cl}_${scenario}.json"
     
     echo ""
 }
@@ -125,16 +121,16 @@ echo ""
 echo "Disponibilité des écritures (%) :"
 for f in results_resilience_*.json; do
     scenario=$(basename $f .json | cut -d'_' -f3-)
-    availability=$(cat $f | jq -r '.write_results.availability_percent // 0')
-    echo "  $scenario: $availability%"
+    availability=$(grep -o '"availability_percent"[[:space:]]*:[[:space:]]*[0-9.]*' "$f" | head -1 | grep -o '[0-9.]*$')
+    echo "  $scenario: ${availability:-0}%"
 done
 
 echo ""
 echo "Disponibilité des lectures (%) :"
 for f in results_resilience_*.json; do
     scenario=$(basename $f .json | cut -d'_' -f3-)
-    availability=$(cat $f | jq -r '.read_results.availability_percent // 0')
-    echo "  $scenario: $availability%"
+    availability=$(grep -o '"availability_percent"[[:space:]]*:[[:space:]]*[0-9.]*' "$f" | tail -1 | grep -o '[0-9.]*$')
+    echo "  $scenario: ${availability:-0}%"
 done
 
 echo ""

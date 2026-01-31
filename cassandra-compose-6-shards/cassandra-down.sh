@@ -249,7 +249,7 @@ EOF
         for container in "${CONTAINERS[@]}"; do
             docker stop $container 2>/dev/null && print_status "$container stopped" || print_warning "$container already stopped"
         done
-        print_info "Data volumes preserved. Use 'docker-compose up -d' or 'docker start cassandra1 cassandra2 cassandra3' to restart"
+        print_info "Data volumes preserved. Use 'docker start cassandra1 cassandra2 cassandra3' to restart"
         ;;
         
     6)
@@ -280,8 +280,6 @@ echo ""
 echo "Useful commands:"
 echo "  Check containers: docker ps -a | grep cassandra"
 echo "  Check volumes:    docker volume ls | grep cassandra"
-echo "  Start cluster:    docker-compose up -d"
 echo "  Restart cluster:  docker start cassandra1 cassandra2 cassandra3"
 echo "  View logs:        docker logs cassandra1"
-echo "  Cluster status:   docker exec cassandra1 nodetool status"
 echo ""
