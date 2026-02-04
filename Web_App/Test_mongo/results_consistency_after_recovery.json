@@ -1,0 +1,24 @@
+{
+    "results": {
+        "consistency_check": {
+            "data_integrity": "true",
+            "duplicate_records": 0,
+            "expected_records": 10,
+            "found_records": 10,
+            "missing_records": 0
+        },
+        "read_performance": {
+            "avg_read_latency_ms": 31.71,
+            "read_error": false
+        },
+        "write_performance": {
+            "avg_write_latency_ms": 17.65,
+            "failed_writes": 0,
+            "p95_write_latency_ms": 80.12,
+            "total_writes": 10,
+            "write_time_seconds": 0.177
+        }
+    },
+    "run_id": "5f996239-21a",
+    "success": true
+}

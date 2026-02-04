@@ -373,12 +373,8 @@ async function getCassandraClusterInfo() {
                     <h4>🖥️ Nodes Status</h4>
                     <div class="shard-info">
                         ${nodes.map(node => `
-                            <div class="shard-card" style="border-color: ${node.is_up ? '#13aa52' : '#dc3545'};">
+                            <div class="shard-card" style="border-color: #1813aa">
                                 <h5>Node: ${node.address}</h5>
-                                <p><strong>Status:</strong> 
-                                    <span class="status-indicator ${node.is_up ? 'active' : 'inactive'}"></span>
-                                    ${node.is_up ? '✅ Connected' : '❌ Disconnected'}
-                                </p>
                                 <p><strong>Datacenter:</strong> ${node.datacenter}</p>
                                 <p><strong>Rack:</strong> ${node.rack}</p>
                             </div>

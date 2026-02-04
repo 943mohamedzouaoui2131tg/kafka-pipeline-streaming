@@ -1095,3 +1095,146 @@ def batch_vs_streaming():
         import traceback
         traceback.print_exc()
         return jsonify({"error": str(e), "success": False}), 500
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Ajouter à la fin de  routes/mongo_routes.py
+#
+# IMPORTANT : cette route ne touche PAS le client global de mongo.py.
+# Elle crée un client isolé par requête → un shard dead ne tue pas le Flask.
+# ─────────────────────────────────────────────────────────────────────────────
+
+import uuid
+import time
+import statistics
+from collections import Counter
+from pymongo import MongoClient
+from flask import request, jsonify
+
+
+MONGO_URI       = "mongodb://localhost:27019"
+MONGO_DATABASE  = "BDABD"
+TEST_COLLECTION = "consistency_test"
+
+
+def _fresh_client():
+    """
+    Client jetable, complètement isolé du client global.
+    - serverSelectionTimeoutMS court → les ops vers un shard dead échouent vite
+    - socketTimeoutMS court          → pas de hang sur une connexion morte
+    - retryWrites=False              → on veut voir les échecs, pas les cacher
+    - retryReads=False               → même en lecture
+    """
+    return MongoClient(
+        MONGO_URI,
+        serverSelectionTimeoutMS=3000,
+        socketTimeoutMS=3000,
+        connectTimeoutMS=2000,
+        retryWrites=False,
+        retryReads=False,
+    )
+
+
+@mongo_bp.route("/test/consistency", methods=["POST"])
+def consistency_test():
+    try:
+        payload    = request.get_json(force=True) or {}
+        num_writes = int(payload.get("num_writes", 1000))
+        run_id     = str(uuid.uuid4())[:12]
+
+        # ── client isolé, ne partage rien avec le reste de l'app ────────────
+        client = _fresh_client()
+        client.admin.command("ping")
+        db  = client[MONGO_DATABASE]
+        col = db[TEST_COLLECTION]
+
+        # ── ÉCRITURES ────────────────────────────────────────────────────────
+        write_latencies: list[float] = []
+        written_ids: list[str]       = []
+        failed_writes                = 0
+
+        t_start = time.time()
+
+        for i in range(num_writes):
+            doc_id = f"{run_id}_{i}"
+            doc = {
+                "_id":      doc_id,
+                "run_id":   run_id,
+                "sequence": i,
+                "payload":  f"test_payload_{i}",
+                "ts":       time.time(),
+            }
+            t0 = time.time()
+            try:
+                col.insert_one(doc)
+                written_ids.append(doc_id)
+            except Exception:
+                failed_writes += 1
+            finally:
+                write_latencies.append((time.time() - t0) * 1000)
+
+        write_time = round(time.time() - t_start, 3)
+
+        # ── LECTURE ──────────────────────────────────────────────────────────
+        # Nouveau client pour la lecture aussi — l'ancien peut être en état
+        # douteux après des ops qui ont échoué.
+        found_docs   = []
+        read_error   = False
+
+        t0 = time.time()
+        try:
+            read_client = _fresh_client()
+            found_docs  = list(read_client[MONGO_DATABASE][TEST_COLLECTION].find({"run_id": run_id}))
+            read_client.close()
+        except Exception:
+            read_error = True
+
+        read_latency = round((time.time() - t0) * 1000, 2)
+
+        # ── INTÉGRITÉ ────────────────────────────────────────────────────────
+        successful = num_writes - failed_writes
+
+        id_counts  = Counter(doc["_id"] for doc in found_docs)
+        duplicates = sum(c - 1 for c in id_counts.values() if c > 1)
+
+        found_ids  = {doc["_id"] for doc in found_docs}
+        missing    = len(set(written_ids) - found_ids)
+
+        integrity  = "true" if (duplicates == 0 and missing == 0) else "false"
+
+        client.close()
+
+        # ── STATS ────────────────────────────────────────────────────────────
+        avg_write_lat = round(statistics.mean(write_latencies), 2) if write_latencies else 0
+        p95_idx       = int(len(write_latencies) * 0.95)
+        p95_write_lat = round(sorted(write_latencies)[min(p95_idx, len(write_latencies)-1)], 2) if write_latencies else 0
+
+        return jsonify({
+            "success": True,
+            "run_id":  run_id,
+            "results": {
+                "write_performance": {
+                    "total_writes":         successful,
+                    "failed_writes":        failed_writes,
+                    "write_time_seconds":   write_time,
+                    "avg_write_latency_ms": avg_write_lat,
+                    "p95_write_latency_ms": p95_write_lat,
+                },
+                "read_performance": {
+                    "avg_read_latency_ms": read_latency,
+                    "read_error":          read_error,
+                },
+                "consistency_check": {
+                    "data_integrity":    integrity,
+                    "found_records":     len(found_docs),
+                    "expected_records":  successful,
+                    "duplicate_records": duplicates,
+                    "missing_records":   missing,
+                },
+            }
+        })
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"success": False, "error": str(e)}), 500

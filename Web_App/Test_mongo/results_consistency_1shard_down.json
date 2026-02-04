@@ -1,0 +1,24 @@
+{
+    "results": {
+        "consistency_check": {
+            "data_integrity": "true",
+            "duplicate_records": 0,
+            "expected_records": 0,
+            "found_records": 0,
+            "missing_records": 0
+        },
+        "read_performance": {
+            "avg_read_latency_ms": 3035.42,
+            "read_error": true
+        },
+        "write_performance": {
+            "avg_write_latency_ms": 3015.55,
+            "failed_writes": 10,
+            "p95_write_latency_ms": 3033.98,
+            "total_writes": 0,
+            "write_time_seconds": 30.155
+        }
+    },
+    "run_id": "d1fb76ae-b95",
+    "success": true
+}

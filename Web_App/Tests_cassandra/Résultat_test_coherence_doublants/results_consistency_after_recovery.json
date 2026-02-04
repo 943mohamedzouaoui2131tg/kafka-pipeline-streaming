@@ -1,1 +1,111 @@
-{"comparison":{"integrity_summary":{"ALL":{"data_integrity":"ISSUES","duplicates":0,"missing":976},"ONE":{"data_integrity":"ISSUES","duplicates":0,"missing":976},"QUORUM":{"data_integrity":"ISSUES","duplicates":0,"missing":976}},"latency_tradeoff":{"ALL":{"avg_read_latency_ms":18.13,"avg_write_latency_ms":15.49},"ONE":{"avg_read_latency_ms":14.91,"avg_write_latency_ms":15.26},"QUORUM":{"avg_read_latency_ms":19.98,"avg_write_latency_ms":14.98}}},"results_by_consistency_level":{"ALL":{"consistency_check":{"data_integrity":"ISSUES","duplicate_records":0,"duplicates_list":[],"expected_records":1000,"found_records":24,"missing_records":976},"read_performance":{"avg_read_latency_ms":18.13,"read_time_seconds":0.02},"write_performance":{"avg_write_latency_ms":15.49,"p95_write_latency_ms":22.82,"p99_write_latency_ms":51.25,"total_writes":1000,"write_time_seconds":15.49}},"ONE":{"consistency_check":{"data_integrity":"ISSUES","duplicate_records":0,"duplicates_list":[],"expected_records":1000,"found_records":24,"missing_records":976},"read_performance":{"avg_read_latency_ms":14.91,"read_time_seconds":0.01},"write_performance":{"avg_write_latency_ms":15.26,"p95_write_latency_ms":22.39,"p99_write_latency_ms":44.49,"total_writes":1000,"write_time_seconds":15.26}},"QUORUM":{"consistency_check":{"data_integrity":"ISSUES","duplicate_records":0,"duplicates_list":[],"expected_records":1000,"found_records":24,"missing_records":976},"read_performance":{"avg_read_latency_ms":19.98,"read_time_seconds":0.02},"write_performance":{"avg_write_latency_ms":14.98,"p95_write_latency_ms":21.61,"p99_write_latency_ms":41.64,"total_writes":1000,"write_time_seconds":14.98}}},"success":true,"test_config":{"consistency_levels_tested":["ONE","QUORUM","ALL"],"keyspace":"projet_bd_rf3","num_writes":1000},"total_execution_time_seconds":45.84}
+{
+    "comparison": {
+        "integrity_summary": {
+            "ALL": {
+                "data_integrity": "ISSUES",
+                "duplicates": 0,
+                "missing": 976
+            },
+            "ONE": {
+                "data_integrity": "ISSUES",
+                "duplicates": 0,
+                "missing": 976
+            },
+            "QUORUM": {
+                "data_integrity": "ISSUES",
+                "duplicates": 0,
+                "missing": 976
+            }
+        },
+        "latency_tradeoff": {
+            "ALL": {
+                "avg_read_latency_ms": 18.13,
+                "avg_write_latency_ms": 15.49
+            },
+            "ONE": {
+                "avg_read_latency_ms": 14.91,
+                "avg_write_latency_ms": 15.26
+            },
+            "QUORUM": {
+                "avg_read_latency_ms": 19.98,
+                "avg_write_latency_ms": 14.98
+            }
+        }
+    },
+    "results_by_consistency_level": {
+        "ALL": {
+            "consistency_check": {
+                "data_integrity": "ISSUES",
+                "duplicate_records": 0,
+                "duplicates_list": [],
+                "expected_records": 1000,
+                "found_records": 24,
+                "missing_records": 976
+            },
+            "read_performance": {
+                "avg_read_latency_ms": 18.13,
+                "read_time_seconds": 0.02
+            },
+            "write_performance": {
+                "avg_write_latency_ms": 15.49,
+                "p95_write_latency_ms": 22.82,
+                "p99_write_latency_ms": 51.25,
+                "total_writes": 1000,
+                "write_time_seconds": 15.49
+            }
+        },
+        "ONE": {
+            "consistency_check": {
+                "data_integrity": "ISSUES",
+                "duplicate_records": 0,
+                "duplicates_list": [],
+                "expected_records": 1000,
+                "found_records": 24,
+                "missing_records": 976
+            },
+            "read_performance": {
+                "avg_read_latency_ms": 14.91,
+                "read_time_seconds": 0.01
+            },
+            "write_performance": {
+                "avg_write_latency_ms": 15.26,
+                "p95_write_latency_ms": 22.39,
+                "p99_write_latency_ms": 44.49,
+                "total_writes": 1000,
+                "write_time_seconds": 15.26
+            }
+        },
+        "QUORUM": {
+            "consistency_check": {
+                "data_integrity": "ISSUES",
+                "duplicate_records": 0,
+                "duplicates_list": [],
+                "expected_records": 1000,
+                "found_records": 24,
+                "missing_records": 976
+            },
+            "read_performance": {
+                "avg_read_latency_ms": 19.98,
+                "read_time_seconds": 0.02
+            },
+            "write_performance": {
+                "avg_write_latency_ms": 14.98,
+                "p95_write_latency_ms": 21.61,
+                "p99_write_latency_ms": 41.64,
+                "total_writes": 1000,
+                "write_time_seconds": 14.98
+            }
+        }
+    },
+    "success": true,
+    "test_config": {
+        "consistency_levels_tested": [
+            "ONE",
+            "QUORUM",
+            "ALL"
+        ],
+        "keyspace": "projet_bd_rf3",
+        "num_writes": 1000
+    },
+    "total_execution_time_seconds": 45.84
+}
